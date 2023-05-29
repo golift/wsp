@@ -11,25 +11,24 @@ import (
 // Pool handles all connections from the peer.
 type Pool struct {
 	server      *Server
-	id          PoolID
-	size        int
+	id          clientID
+	length      int
 	connections []*Connection
 	idle        chan *Connection
 	done        bool
 	lock        sync.RWMutex
 }
 
-// PoolID represents the identifier of the connected WebSocket client.
-type PoolID string
+// clientID represents the identifier of the connected WebSocket client.
+type clientID string
 
 // NewPool creates a new Pool.
-func NewPool(server *Server, id PoolID) *Pool {
-	pool := new(Pool)
-	pool.server = server
-	pool.id = id
-	pool.idle = make(chan *Connection)
-
-	return pool
+func NewPool(server *Server, id clientID) *Pool {
+	return &Pool{
+		server: server,
+		id:     id,
+		idle:   make(chan *Connection),
+	}
 }
 
 // Register creates a new Connection and adds it to the pool.
@@ -44,22 +43,17 @@ func (pool *Pool) Register(ws *websocket.Conn) {
 
 	log.Printf("Registering new connection from %s", pool.id)
 
-	connection := NewConnection(pool, ws)
-	pool.connections = append(pool.connections, connection)
+	pool.connections = append(pool.connections, NewConnection(pool, ws))
 }
 
 // Offer offers an idle connection to the server.
 func (pool *Pool) Offer(connection *Connection) {
-	// The original code of root-gg/wsp was invoking goroutine,
-	// but the callder was also invoking goroutine,
-	// so it was deemed unnecessary and removed.
 	pool.idle <- connection
 }
 
-// Clean removes dead connection from the pool.
-// Look for dead connection in the pool.
+// clean removes dead connection from the pool.
 // This MUST be surrounded by pool.lock.Lock().
-func (pool *Pool) Clean() {
+func (pool *Pool) clean() {
 	idle := 0
 	connections := []*Connection{}
 
@@ -68,7 +62,7 @@ func (pool *Pool) Clean() {
 		connection.lock.Lock()
 
 		if connection.status == Idle {
-			if idle++; idle > pool.size {
+			if idle++; idle > pool.length {
 				// We have enough idle connections in the pool.
 				// Terminate the connection if it is idle since more that IdleTimeout
 				if time.Since(connection.idleSince) > pool.server.Config.IdleTimeout {
@@ -89,17 +83,17 @@ func (pool *Pool) Clean() {
 	pool.connections = connections
 }
 
-// IsEmpty clean the pool and return true if the pool is empty.
+// IsEmpty cleans the pool and return true if the pool is empty.
 func (pool *Pool) IsEmpty() bool {
 	pool.lock.Lock()
 	defer pool.lock.Unlock()
 
-	pool.Clean()
+	pool.clean()
 
 	return len(pool.connections) == 0
 }
 
-// Shutdown closes every connections in the pool and cleans it.
+// Shutdown closes every connection in the pool and cleans it.
 func (pool *Pool) Shutdown() {
 	pool.lock.Lock()
 	defer pool.lock.Unlock()
@@ -110,7 +104,7 @@ func (pool *Pool) Shutdown() {
 		connection.Close()
 	}
 
-	pool.Clean()
+	pool.clean()
 }
 
 // PoolSize is the number of connection in each state in the pool.
@@ -120,8 +114,8 @@ type PoolSize struct {
 	Closed int
 }
 
-// Size return the number of connection in each state in the pool.
-func (pool *Pool) Size() *PoolSize {
+// size return the number of connection in each state in the pool.
+func (pool *Pool) size() *PoolSize {
 	pool.lock.Lock()
 	defer pool.lock.Unlock()
 

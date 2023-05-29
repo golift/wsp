@@ -77,15 +77,14 @@ func (connection *Connection) Connect(ctx context.Context) error {
 	return nil
 }
 
-// the main loop it :
-//   - wait to receive HTTP requests from the Server
-//   - execute HTTP requests
-//   - send HTTP response back to the Server
+// serve is the main loop, it:
+//   - Waits to receive HTTP requests from the Server.
+//   - Executes HTTP requests.
+//   - Sends HTTP responses back to the Server.
 //
 // As in the server code there is no buffering of HTTP request/response body.
-// As in the server if any error occurs the connection is closed/throwed.
+// As in the server if any error occurs the connection is closed/thrown.
 func (connection *Connection) serve(ctx context.Context) {
-	// If there's any
 	defer connection.Close()
 
 	// Keep connection alive. This go routine may leak.
@@ -188,7 +187,7 @@ func (connection *Connection) serve(ctx context.Context) {
 // Returns true if there's an error.
 func (connection *Connection) error(msg string) bool {
 	resp := wsp.NewHTTPResponse()
-	resp.StatusCode = 527
+	resp.StatusCode = wsp.ClientErrorCode
 
 	log.Println(msg)
 

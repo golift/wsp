@@ -1,13 +1,27 @@
-WS PROXY
-========
+Mulery
+======
 
-This is a reverse HTTP proxy over websockets.
-The aim is to securely make call to internal APIs from outside.
+**This project is under development and not yet ready for consumption.**
 
-The detailed design is described at the series of [Reverse HTTP proxy over WebSocket in Go](https://dev.to/hgsgtk/reverse-http-proxy-over-websocket-in-go-part-1-13n4) on dev.to.
+The idea behind what's beind built here is a server that can handle thousands of simultaneous client connections.
+The server is essentially a command and control center for the clients. A simple server is provided, as a library
+and a binary. The server is only useful with the client library that is not provided as a binary. You need to instrument
+your own logic. The primary use case is to proxy http requests back into the http server running on the client.
 
-How does it works
------------------
+You run the server. Then you run 5000 clients that make a persistent connect to the server and register themselves with 
+a configurable id. You can now send http requests to the server with a special header that contains the client's registered
+ID. The server proxies the web request back into the client through the previously-established presistent connection.
+
+We use this so our clients do not have to open a port (port forward) for our server to communicate with the software they 
+deployed on premesis. It allows our servers to distribute load and reliably reach back into the running end-user application.
+
+How
+---
+
+Websockets and some reverse-proxy engineering.
+
+Old Readme
+----------
 
 a WSP client runs in the internal network ( alongside the APIs )
 and connects to a remote WSP server with HTTP websockets.

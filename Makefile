@@ -1,4 +1,4 @@
-.PHONY: build server client test
+.PHONY: build server client
 
 build: server client
 
@@ -7,6 +7,3 @@ server:
 
 client:
 	go build ./cmd/wsp_client
-
-test:
-	go run ./examples/test_api/main.go

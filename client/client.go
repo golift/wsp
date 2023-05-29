@@ -18,13 +18,12 @@ type Client struct {
 
 // NewClient creates a new Client.
 func NewClient(config *Config) *Client {
-	client := new(Client)
-	client.Config = config
-	client.client = &http.Client{}
-	client.dialer = &websocket.Dialer{}
-	client.pools = make(map[string]*Pool)
-
-	return client
+	return &Client{
+		Config: config,
+		client: &http.Client{},
+		dialer: &websocket.Dialer{},
+		pools:  make(map[string]*Pool),
+	}
 }
 
 // Start the Proxy.

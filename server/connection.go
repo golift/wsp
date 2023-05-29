@@ -27,7 +27,7 @@ const (
 // Connection manages a single websocket connection from the peer.
 // wsp supports multiple connections from a single peer at the same time.
 type Connection struct {
-	pool      *Pool
+	pool      *Pool // the pool this connection belongs to.
 	ws        *websocket.Conn
 	status    ConnectionStatus
 	idleSince time.Time
@@ -51,16 +51,17 @@ type Connection struct {
 // NewConnection returns a new Connection.
 func NewConnection(pool *Pool, ws *websocket.Conn) *Connection {
 	// Initialize a new Connection
-	conn := new(Connection)
-	conn.pool = pool
-	conn.ws = ws
-	conn.nextResponse = make(chan chan io.Reader)
-	conn.status = Idle
+	conn := &Connection{
+		pool:         pool,
+		ws:           ws,
+		nextResponse: make(chan chan io.Reader),
+		status:       Idle,
+	}
 
-	// Mark that this connection is ready to use for relay
+	// Mark that this connection is ready to use for relay.
 	conn.Release()
 
-	// Start to listen to incoming messages over the WebSocket connection
+	// Start to listen to incoming messages over the WebSocket connection.
 	go conn.read()
 
 	return conn
@@ -96,18 +97,18 @@ func (connection *Connection) read() {
 		}
 
 		if connection.status != Busy {
-			// We received a wild unexpected message
+			// We received a wild unexpected message, but we're goin to silently ignore it.
 			break
 		}
 
 		// When it gets here, it is expected to be either a HttpResponse or a HttpResponseBody has been returned.
 		//
-		// Next, it waits to receive the value from the Connection.proxyRequest function
+		// Next, it waits to receive the value from the Connection.proxyRequest function.
 		// that is invoked in the "server" thread.
 		// https://github.com/hgsgtk/wsp/blob/29cc73bbd67de18f1df295809166a7a5ef52e9fa/server/connection.go#L157
 		resp := <-connection.nextResponse
 		if resp == nil {
-			// We have been unlocked by Close()
+			// We have been unlocked by Close().
 			break
 		}
 
@@ -129,13 +130,6 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		return fmt.Errorf("unable to serialize request: %w", err)
 	}
-	// i.e.
-	// {
-	// 		"Method":"GET",
-	// 		"URL":"http://localhost:8081/hello",
-	// 		"Header":{"Accept":["*/*"],"User-Agent":["curl/7.77.0"],"X-Proxy-Destination":["http://localhost:8081/hello"]},
-	//		"ContentLength":0
-	// }
 
 	// [2]: Send the HTTP request to the peer
 	// Send the serialized HTTP request to the peer
@@ -154,7 +148,7 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := bodyWriter.Close(); err != nil {
-		return fmt.Errorf("unable to pipe request body (close): %w", err)
+		return fmt.Errorf("unable to close request body pipe: %w", err)
 	}
 
 	// [3]: Wait the HTTP response is ready
@@ -212,14 +206,14 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 			close(responseChannel)
 		}
 
-		return fmt.Errorf("unable to get http response body reader : %w", err)
+		return fmt.Errorf("unable to get http response body reader: %w", err)
 	}
 
 	// [6]: Read the HTTP response body from the peer
 	// Pipe the HTTP response body right from the remote Proxy to the client
 	if _, err := io.Copy(w, responseBodyReader); err != nil {
 		close(responseBodyChannel)
-		return fmt.Errorf("unable to pipe response body : %w", err)
+		return fmt.Errorf("unable to pipe response body: %w", err)
 	}
 
 	// Notify read() that we are done reading the response body
@@ -279,12 +273,11 @@ func (connection *Connection) close() {
 
 	log.Printf("Closing connection from %s", connection.pool.id)
 
-	// This one will be executed *before* lock.Unlock()
-	defer func() { connection.status = Closed }()
-
 	// Unlock a possible read() wild message
 	close(connection.nextResponse)
-
 	// Close the underlying TCP connection
 	connection.ws.Close()
+
+	// This must be executed *before* lock.Unlock()
+	connection.status = Closed
 }

@@ -1,7 +1,6 @@
 package wsp
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 )
@@ -13,7 +12,11 @@ type HTTPResponse struct {
 	ContentLength int64       `json:"contentLength"`
 }
 
-const ProxyErrorCode = 526
+// Custom HTTP error codes shared by client and server.
+const (
+	ProxyErrorCode  = 526
+	ClientErrorCode = 527
+)
 
 // SerializeHTTPResponse create a new HTTPResponse from a http.Response.
 func SerializeHTTPResponse(resp *http.Response) *HTTPResponse {
@@ -35,9 +38,4 @@ func NewHTTPResponse() *HTTPResponse {
 func ProxyError(w http.ResponseWriter, err error) {
 	log.Println(err)
 	http.Error(w, err.Error(), ProxyErrorCode)
-}
-
-// ProxyErrorf log error and return a HTTP 526 error with the message.
-func ProxyErrorf(w http.ResponseWriter, format string, args ...interface{}) {
-	ProxyError(w, fmt.Errorf(format, args...))
 }

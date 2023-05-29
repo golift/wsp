@@ -8,7 +8,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// Config configures an Proxy.
+// Config is the required data to initialize a client proxy connection.
 type Config struct {
 	ID           string
 	Targets      []string
@@ -18,28 +18,17 @@ type Config struct {
 }
 
 // NewConfig creates a new ProxyConfig.
-func NewConfig() (*Config, error) {
-	config := new(Config)
-
-	id, err := uuid.NewV4()
-	if err != nil {
-		return nil, fmt.Errorf("unable to get unique id: %w", err)
+func NewConfig() *Config {
+	return &Config{
+		Targets:      []string{"ws://127.0.0.1:8080/register"},
+		PoolIdleSize: 10,
+		PoolMaxSize:  100,
 	}
-
-	config.ID = id.String()
-	config.Targets = []string{"ws://127.0.0.1:8080/register"}
-	config.PoolIdleSize = 10
-	config.PoolMaxSize = 100
-
-	return config, nil
 }
 
 // LoadConfiguration loads configuration from a YAML file.
 func LoadConfiguration(path string) (*Config, error) {
-	config, err := NewConfig()
-	if err != nil {
-		return nil, err
-	}
+	config := NewConfig()
 
 	bytes, err := os.ReadFile(path)
 	if err != nil {
@@ -49,6 +38,15 @@ func LoadConfiguration(path string) (*Config, error) {
 	err = yaml.Unmarshal(bytes, config)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse configuration: %w", err)
+	}
+
+	if config.ID == "" {
+		id, err := uuid.NewV4()
+		if err != nil {
+			return nil, fmt.Errorf("unable to get unique id: %w", err)
+		}
+
+		config.ID = id.String()
 	}
 
 	return config, nil

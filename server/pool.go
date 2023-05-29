@@ -10,41 +10,40 @@ import (
 
 // Pool handles all connections from the peer.
 type Pool struct {
-	server *Server
-	id     PoolID
-
-	size int
-
+	server      *Server
+	id          PoolID
+	size        int
 	connections []*Connection
 	idle        chan *Connection
-
-	done bool
-	lock sync.RWMutex
+	done        bool
+	lock        sync.RWMutex
 }
 
 // PoolID represents the identifier of the connected WebSocket client.
 type PoolID string
 
-// NewPool creates a new Pool
+// NewPool creates a new Pool.
 func NewPool(server *Server, id PoolID) *Pool {
-	p := new(Pool)
-	p.server = server
-	p.id = id
-	p.idle = make(chan *Connection)
-	return p
+	pool := new(Pool)
+	pool.server = server
+	pool.id = id
+	pool.idle = make(chan *Connection)
+
+	return pool
 }
 
-// Register creates a new Connection and adds it to the pool
+// Register creates a new Connection and adds it to the pool.
 func (pool *Pool) Register(ws *websocket.Conn) {
 	pool.lock.Lock()
 	defer pool.lock.Unlock()
 
-	// Ensure we never add a connection to a pool we have garbage collected
+	// Ensure we never add a connection to a pool we have garbage collected.
 	if pool.done {
 		return
 	}
 
 	log.Printf("Registering new connection from %s", pool.id)
+
 	connection := NewConnection(pool, ws)
 	pool.connections = append(pool.connections, connection)
 }
@@ -57,45 +56,50 @@ func (pool *Pool) Offer(connection *Connection) {
 	pool.idle <- connection
 }
 
-// Clean removes dead connection from the pool
-// Look for dead connection in the pool
-// This MUST be surrounded by pool.lock.Lock()
+// Clean removes dead connection from the pool.
+// Look for dead connection in the pool.
+// This MUST be surrounded by pool.lock.Lock().
 func (pool *Pool) Clean() {
 	idle := 0
-	var connections []*Connection
+	connections := []*Connection{}
 
 	for _, connection := range pool.connections {
 		// We need to be sur we'll never close a BUSY or soon to be BUSY connection
 		connection.lock.Lock()
+
 		if connection.status == Idle {
-			idle++
-			if idle > pool.size {
+			if idle++; idle > pool.size {
 				// We have enough idle connections in the pool.
 				// Terminate the connection if it is idle since more that IdleTimeout
-				if int(time.Now().Sub(connection.idleSince).Seconds())*1000 > pool.server.Config.IdleTimeout {
+				if time.Since(connection.idleSince) > pool.server.Config.IdleTimeout {
 					connection.close()
 				}
 			}
 		}
+
 		connection.lock.Unlock()
+
 		if connection.status == Closed {
 			continue
 		}
+
 		connections = append(connections, connection)
 	}
+
 	pool.connections = connections
 }
 
-// IsEmpty clean the pool and return true if the pool is empty
+// IsEmpty clean the pool and return true if the pool is empty.
 func (pool *Pool) IsEmpty() bool {
 	pool.lock.Lock()
 	defer pool.lock.Unlock()
 
 	pool.Clean()
+
 	return len(pool.connections) == 0
 }
 
-// Shutdown closes every connections in the pool and cleans it
+// Shutdown closes every connections in the pool and cleans it.
 func (pool *Pool) Shutdown() {
 	pool.lock.Lock()
 	defer pool.lock.Unlock()
@@ -105,31 +109,34 @@ func (pool *Pool) Shutdown() {
 	for _, connection := range pool.connections {
 		connection.Close()
 	}
+
 	pool.Clean()
 }
 
-// PoolSize is the number of connection in each state in the pool
+// PoolSize is the number of connection in each state in the pool.
 type PoolSize struct {
 	Idle   int
 	Busy   int
 	Closed int
 }
 
-// Size return the number of connection in each state in the pool
-func (pool *Pool) Size() (ps *PoolSize) {
+// Size return the number of connection in each state in the pool.
+func (pool *Pool) Size() *PoolSize {
 	pool.lock.Lock()
 	defer pool.lock.Unlock()
 
-	ps = new(PoolSize)
+	size := new(PoolSize)
+
 	for _, connection := range pool.connections {
-		if connection.status == Idle {
-			ps.Idle++
-		} else if connection.status == Busy {
-			ps.Busy++
-		} else if connection.status == Closed {
-			ps.Closed++
+		switch connection.status {
+		case Idle:
+			size.Idle++
+		case Busy:
+			size.Busy++
+		case Closed:
+			size.Closed++
 		}
 	}
 
-	return
+	return size
 }

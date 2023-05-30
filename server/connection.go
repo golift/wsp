@@ -62,12 +62,13 @@ func NewConnection(pool *Pool, ws *websocket.Conn) *Connection {
 	conn.Release()
 
 	// Start to listen to incoming messages over the WebSocket connection.
-	go conn.read()
+	go conn.read() //gofunc:3
 
 	return conn
 }
 
-// read the incoming message of the connection.
+// read the incoming message from the connection.
+// Every connection gets a read() methood in a go routine.
 func (connection *Connection) read() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -78,9 +79,11 @@ func (connection *Connection) read() {
 	}()
 
 	for {
+		connection.lock.Lock()
 		if connection.status == Closed {
 			break
 		}
+		connection.lock.Unlock()
 
 		// https://godoc.org/github.com/gorilla/websocket#hdr-Control_Messages
 		//
@@ -96,10 +99,12 @@ func (connection *Connection) read() {
 			break
 		}
 
+		connection.lock.Lock()
 		if connection.status != Busy {
 			// We received a wild unexpected message, but we're goin to silently ignore it.
 			break
 		}
+		connection.lock.Unlock()
 
 		// When it gets here, it is expected to be either a HttpResponse or a HttpResponseBody has been returned.
 		//
@@ -112,11 +117,11 @@ func (connection *Connection) read() {
 			break
 		}
 
-		// Send the reader back to Connection.proxyRequest
+		// Send the reader back to Connection.proxyRequest.
 		resp <- reader
 
-		// Wait for proxyRequest to close the channel
-		// this notify that it is done with the reader
+		// Wait for proxyRequest to close the channel.
+		// This notifies that it is done with the reader.
 		<-resp
 	}
 }
@@ -202,7 +207,7 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 	responseBodyReader, ok := <-responseBodyChannel
 	if responseBodyReader == nil {
 		if ok {
-			// If more is false the channel is already closed
+			// If ok is false the channel is already closed
 			close(responseChannel)
 		}
 
@@ -254,14 +259,13 @@ func (connection *Connection) Release() {
 	connection.idleSince = time.Now()
 	connection.status = Idle
 
-	go connection.pool.Offer(connection)
+	go connection.pool.Offer(connection) //gofunc:4
 }
 
 // Close the connection.
 func (connection *Connection) Close() {
 	connection.lock.Lock()
 	defer connection.lock.Unlock()
-
 	connection.close()
 }
 

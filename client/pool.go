@@ -28,14 +28,13 @@ type PoolSize struct {
 
 // NewPool creates a new Pool.
 func NewPool(client *Client, target string, secretKey string) *Pool {
-	pool := new(Pool)
-	pool.client = client
-	pool.target = target
-	pool.connections = make([]*Connection, 0)
-	pool.secretKey = secretKey
-	pool.done = make(chan struct{})
-
-	return pool
+	return &Pool{
+		client:      client,
+		target:      target,
+		secretKey:   secretKey,
+		connections: []*Connection{},
+		done:        make(chan struct{}),
+	}
 }
 
 // Start connects to the remote server and runs a one-second loop to maintain the connection.

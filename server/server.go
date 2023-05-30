@@ -11,7 +11,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -31,23 +30,19 @@ type Server struct {
 	Config   *Config
 	upgrader websocket.Upgrader
 	// In pools, keep connections with WebSocket peers.
-	pools map[clientID]*Pool
-	// A RWMutex is a reader/writer mutual exclusion lock,
-	// and it is for exclusive control with pools operation.
-	//
-	// This is locked when reading and writing pools, the timing is when:
-	// 1. (rw) registering websocket clients in /register endpoint
-	// 2. (rw) remove empty pools which has no connections
-	// 3. (r) dispatching connection from available pools to clients requests
-	//
-	// And then it is released after each process is completed.
-	lock sync.RWMutex
-	done chan struct{}
+	pools   map[clientID]*Pool
+	newPool chan *newPool
 	// Through dispatcher channel it communicates between "server" thread and "dispatcher" thread.
 	// "server" thread sends the value to this channel when accepting requests in the endpoint /requests,
 	// and "dispatcher" thread reads this channel.
 	dispatcher chan *ConnectionRequest
 	server     *http.Server
+}
+
+type newPool struct {
+	sock     *websocket.Conn
+	clientID clientID
+	size     int
 }
 
 // ConnectionRequest is used to request a proxy connection from the dispatcher.
@@ -63,7 +58,7 @@ func NewServer(config *Config) *Server {
 	return &Server{
 		Config:     config,
 		upgrader:   websocket.Upgrader{},
-		done:       make(chan struct{}),
+		newPool:    make(chan *newPool),
 		dispatcher: make(chan *ConnectionRequest),
 		pools:      make(map[clientID]*Pool),
 	}
@@ -71,19 +66,6 @@ func NewServer(config *Config) *Server {
 
 // Start Server HTTP server.
 func (s *Server) Start() {
-	go func() {
-		const waitTime = 5 * time.Second
-		ticker := time.NewTicker(waitTime)
-		for {
-			select {
-			case <-s.done:
-				return
-			case <-ticker.C:
-				s.clean()
-			}
-		}
-	}()
-
 	smx := http.NewServeMux()
 	// XXX: I want to detach the handler function from the Server struct,
 	// but it is tightly coupled to the internal state of the Server.
@@ -97,7 +79,7 @@ func (s *Server) Start() {
 
 	// Dispatch connection from available pools to client requests
 	// in a separate thread from the server thread.
-	go s.dispatchConnections()
+	go s.dispatchConnections() //gofunc:1
 
 	s.server = &http.Server{
 		Addr:        fmt.Sprintf("%s:%d", s.Config.Host, s.Config.Port),
@@ -105,7 +87,7 @@ func (s *Server) Start() {
 		ReadTimeout: s.Config.Timeout,
 	}
 
-	go func() {
+	go func() { //gofunc:2
 		err := s.server.ListenAndServe()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalln("Web server failed, exiting:", err)
@@ -116,15 +98,14 @@ func (s *Server) Start() {
 // clean removes empty Pools; those with no incoming client connections.
 // It is invoked every 5 sesconds and at shutdown.
 func (s *Server) clean() {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
 	if len(s.pools) == 0 {
 		return
 	}
 
 	idle := 0
 	busy := 0
+	closed := 0
+	conns := 0
 	pools := map[clientID]*Pool{}
 
 	for target, pool := range s.pools {
@@ -132,24 +113,51 @@ func (s *Server) clean() {
 			log.Printf("Removing empty connection pool: %s", pool.id)
 			pool.Shutdown()
 			delete(s.pools, target)
+			closed++
 		} else {
 			pools[target] = pool
+			ps := pool.Size()
+			conns += ps.Total
+			idle += ps.Idle
+			busy += ps.Busy
 		}
-
-		ps := pool.size()
-		idle += ps.Idle
-		busy += ps.Busy
 	}
 
 	s.pools = pools
-	log.Printf("%d pools, %d idle, %d busy", len(s.pools), idle, busy)
+	log.Printf("%d pools, %d connections, %d idle, %d busy, %d closed, %d newPool",
+		len(s.pools), conns, idle, busy, closed, len(s.newPool))
 }
 
 // Dispatch connection from available pools to client requests.
 func (s *Server) dispatchConnections() {
-	for request := range s.dispatcher {
-		// Runs in an infinite loop and keeps receiving the value from the `server.dispatcher` channel.
-		s.dispatchRequest(request)
+	defer s.shutdown()
+
+	const waitTime = 5 * time.Second
+
+	ticker := time.NewTicker(waitTime)
+	defer ticker.Stop()
+
+	for {
+		// Runs in an infinite loop:
+		// - Receives the value from the `server.dispatcher` channel.
+		// - Checks for done channel closing.
+		// - Runs cleaner every 5 seconds.
+		select {
+		case newPool, ok := <-s.newPool:
+			if !ok {
+				return
+			}
+
+			s.registerPool(newPool)
+		case <-ticker.C:
+			s.clean()
+		case request, ok := <-s.dispatcher:
+			if !ok {
+				return
+			}
+
+			s.dispatchRequest(request)
+		}
 	}
 }
 
@@ -169,11 +177,8 @@ func (s *Server) dispatchRequest(request *ConnectionRequest) {
 		default: // Go through
 		}
 
-		s.lock.RLock()
-
 		if len(s.pools) == 0 {
 			// No connection pool available
-			s.lock.RUnlock()
 			return
 		}
 
@@ -212,7 +217,6 @@ func (s *Server) getRequestConnection(request *ConnectionRequest) (*Connection, 
 	}
 
 	cases[len(cases)-1] = reflect.SelectCase{Dir: reflect.SelectDefault}
-	s.lock.RUnlock()
 
 	_, value, ok := reflect.Select(cases)
 	if !ok {
@@ -265,7 +269,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Here waiting for a result from dispatcher.
 	connection := <-request.connection
 	if connection == nil {
-		// Dispatcher has set `nil` which means the target has no pool.
+		// Dispatcher is `nil` which means the target has no pool.
 		wsp.ProxyError(w, fmt.Errorf("%w: %s", ErrNoProxyTarget, request.target))
 		return
 	}
@@ -276,10 +280,41 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		connection.Close()
 		// Try to return an error to the client.
 		// This might fail if response headers have already been sent.
-		wsp.ProxyError(w, err)
+		wsp.ProxyError(w, fmt.Errorf("tunneling failure, connection closed: %w", err))
 	}
 }
 
+// handleRegister receives http requests for /register paths.
+// Receives the WebSocket upgrade handshake request from wsp_client.
+func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	// 0. Validate the provided secret key.
+	if err := s.validateKey(r.Header); err != nil {
+		wsp.ProxyError(w, err)
+		return
+	}
+
+	// 1. Upgrade a received HTTP request to a WebSocket connection.
+	sock, err := s.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		wsp.ProxyError(w, fmt.Errorf("http upgrade failed: %w", err))
+		return
+	}
+
+	// 2. Wait a greeting message from the peer and parse it.
+	// The first message should contain the remote Proxy name and pool size.
+	clientID, size, err := parseGreeting(sock)
+	if err != nil {
+		wsp.ProxyError(w, err)
+		sock.Close()
+
+		return
+	}
+
+	// 3. Register the connection into server pools.
+	s.newPool <- &newPool{sock, clientID, size}
+}
+
+// 0. Validate the provided secret key.
 func (s *Server) validateKey(header http.Header) error {
 	// If a custom key validator is provided, run that.
 	if s.Config.KeyValidator != nil {
@@ -299,47 +334,7 @@ func (s *Server) validateKey(header http.Header) error {
 	return nil
 }
 
-// handleRegister receives http requests for /register paths.
-// Receives the WebSocket upgrade handshake request from wsp_client.
-func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
-	// 1. Upgrade a received HTTP request to a WebSocket connection.
-	if err := s.validateKey(r.Header); err != nil {
-		wsp.ProxyError(w, err)
-		return
-	}
-
-	ws, err := s.upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		wsp.ProxyError(w, fmt.Errorf("http upgrade failed: %w", err))
-		return
-	}
-
-	// 2. Wait a greeting message from the peer and parse it.
-	// The first message should contain the remote Proxy name and pool size.
-	clientID, size, err := parseGreeting(ws)
-	if err != nil {
-		wsp.ProxyError(w, err)
-		ws.Close()
-
-		return
-	}
-
-	// 3. Register the connection into server pools.
-	// s.lock is for exclusive control of pools operation.
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	if pool, ok := s.pools[clientID]; !ok || pool == nil {
-		s.pools[clientID] = NewPool(s, clientID)
-	}
-
-	// update pool size
-	s.pools[clientID].length = size
-
-	// Add the WebSocket connection to the pool
-	s.pools[clientID].Register(ws)
-}
-
+// 2. Wait a greeting message from the peer and parse it.
 func parseGreeting(sock *websocket.Conn) (clientID, int, error) {
 	_, greeting, err := sock.ReadMessage()
 	if err != nil {
@@ -358,13 +353,33 @@ func parseGreeting(sock *websocket.Conn) (clientID, int, error) {
 	return clientID, size, nil
 }
 
+// 3. Register the connection into server pools.
+func (s *Server) registerPool(newPool *newPool) {
+	if pool, ok := s.pools[newPool.clientID]; !ok || pool == nil {
+		s.pools[newPool.clientID] = NewPool(s, newPool.clientID)
+	}
+
+	// update pool size
+	s.pools[newPool.clientID].length = newPool.size
+
+	// Add the WebSocket connection to the pool
+	s.pools[newPool.clientID].Register(newPool.sock)
+}
+
 func (s *Server) handleStatus(resp http.ResponseWriter, _ *http.Request) {
 	http.Error(resp, "ok", http.StatusOK)
 }
 
 // Shutdown stop the Server.
 func (s *Server) Shutdown() {
-	close(s.done)
+	ctx, cancel := context.WithTimeout(context.Background(), s.server.ReadTimeout)
+	defer cancel()
+
+	s.server.Shutdown(ctx)
+	close(s.newPool)
+}
+
+func (s *Server) shutdown() {
 	close(s.dispatcher)
 
 	for target, pool := range s.pools {

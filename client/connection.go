@@ -126,7 +126,7 @@ func (connection *Connection) serve(ctx context.Context) {
 			break
 		}
 
-		log.Printf("[%s] %s", req.Method, req.URL.String())
+		log.Printf("[%s] %s %s", connection.pool.client.Config.ID, req.Method, req.URL.String())
 
 		// Pipe request body
 		_, bodyReader, err := connection.ws.NextReader()

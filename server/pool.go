@@ -2,7 +2,6 @@ package server
 
 import (
 	"log"
-	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -10,13 +9,16 @@ import (
 
 // Pool handles all connections from the peer.
 type Pool struct {
-	server      *Server
-	id          clientID
+	done        bool
 	length      int
+	idleTimeout time.Duration
+	id          clientID
 	connections []*Connection
 	idle        chan *Connection
-	done        bool
-	lock        sync.RWMutex
+	newConn     chan *Connection
+	askClean    chan struct{}
+	askSize     chan struct{}
+	getSize     chan *PoolSize
 }
 
 // clientID represents the identifier of the connected WebSocket client.
@@ -24,26 +26,60 @@ type clientID string
 
 // NewPool creates a new Pool.
 func NewPool(server *Server, id clientID) *Pool {
-	return &Pool{
-		server: server,
-		id:     id,
-		idle:   make(chan *Connection),
+	pool := &Pool{
+		id:          id,
+		idle:        make(chan *Connection),
+		idleTimeout: server.Config.IdleTimeout,
+		newConn:     make(chan *Connection),
+		askClean:    make(chan struct{}),
+		askSize:     make(chan struct{}),
+		getSize:     make(chan *PoolSize),
+	}
+
+	go pool.keepRunning()
+
+	return pool
+}
+
+func (pool *Pool) shutdown() {
+	pool.done = true
+
+	for _, connection := range pool.connections {
+		connection.Close()
+	}
+
+	close(pool.askClean)
+	close(pool.askSize)
+	close(pool.getSize)
+	pool.clean()
+}
+
+func (pool *Pool) keepRunning() {
+	defer pool.shutdown()
+
+	for {
+		select {
+		case <-pool.askClean:
+			pool.clean()
+			pool.getSize <- &PoolSize{Total: len(pool.connections)}
+		case <-pool.askSize:
+			pool.getSize <- pool.size()
+		case conn, ok := <-pool.newConn:
+			if !ok {
+				return
+			}
+
+			if !pool.done {
+				pool.connections = append(pool.connections, conn)
+			}
+		}
 	}
 }
 
 // Register creates a new Connection and adds it to the pool.
 func (pool *Pool) Register(ws *websocket.Conn) {
-	pool.lock.Lock()
-	defer pool.lock.Unlock()
-
-	// Ensure we never add a connection to a pool we have garbage collected.
-	if pool.done {
-		return
-	}
-
 	log.Printf("Registering new connection from %s", pool.id)
-
-	pool.connections = append(pool.connections, NewConnection(pool, ws))
+	pool.newConn <- NewConnection(pool, ws)
 }
 
 // Offer offers an idle connection to the server.
@@ -51,8 +87,7 @@ func (pool *Pool) Offer(connection *Connection) {
 	pool.idle <- connection
 }
 
-// clean removes dead connection from the pool.
-// This MUST be surrounded by pool.lock.Lock().
+// clean removes dead and idle connections from the pool.
 func (pool *Pool) clean() {
 	idle := 0
 	connections := []*Connection{}
@@ -65,17 +100,19 @@ func (pool *Pool) clean() {
 			if idle++; idle > pool.length {
 				// We have enough idle connections in the pool.
 				// Terminate the connection if it is idle since more that IdleTimeout
-				if time.Since(connection.idleSince) > pool.server.Config.IdleTimeout {
+				if time.Since(connection.idleSince) > pool.idleTimeout {
+					log.Println("[DEBUG] Closing idle connection: ", connection.pool.id)
 					connection.close()
 				}
 			}
 		}
 
-		connection.lock.Unlock()
-
 		if connection.status == Closed {
+			connection.lock.Unlock()
 			continue
 		}
+
+		connection.lock.Unlock()
 
 		connections = append(connections, connection)
 	}
@@ -85,41 +122,34 @@ func (pool *Pool) clean() {
 
 // IsEmpty cleans the pool and return true if the pool is empty.
 func (pool *Pool) IsEmpty() bool {
-	pool.lock.Lock()
-	defer pool.lock.Unlock()
-
-	pool.clean()
-
-	return len(pool.connections) == 0
+	pool.askClean <- struct{}{}
+	return (<-pool.getSize).Total == 0
 }
 
 // Shutdown closes every connection in the pool and cleans it.
 func (pool *Pool) Shutdown() {
-	pool.lock.Lock()
-	defer pool.lock.Unlock()
-
-	pool.done = true
-
-	for _, connection := range pool.connections {
-		connection.Close()
-	}
-
-	pool.clean()
+	close(pool.newConn)
 }
 
 // PoolSize is the number of connection in each state in the pool.
 type PoolSize struct {
+	Total  int
 	Idle   int
 	Busy   int
 	Closed int
 }
 
-// size return the number of connection in each state in the pool.
-func (pool *Pool) size() *PoolSize {
-	pool.lock.Lock()
-	defer pool.lock.Unlock()
+// Size return the number of connection in each state in the pool.
+func (pool *Pool) Size() *PoolSize {
+	pool.askSize <- struct{}{}
+	return <-pool.getSize
+}
 
-	size := new(PoolSize)
+// size return the number of connection in each state in the pool. not thread safe.
+func (pool *Pool) size() *PoolSize {
+	size := &PoolSize{
+		Total: len(pool.connections),
+	}
 
 	for _, connection := range pool.connections {
 		switch connection.status {

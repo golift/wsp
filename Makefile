@@ -3,7 +3,7 @@
 build: server client
 
 server:
-	go build ./cmd/wsp_server
+	go build -race ./cmd/wsp_server
 
 client:
-	go build ./cmd/wsp_client
+	go build -race ./cmd/wsp_client

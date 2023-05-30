@@ -24,11 +24,12 @@ type Pool struct {
 // clientID represents the identifier of the connected WebSocket client.
 type clientID string
 
-// NewPool creates a new Pool.
-func NewPool(server *Server, id clientID) *Pool {
+// NewPool creates a new Pool, and starts one go routine per pool to keep it clean and running.
+// Each pool represents 1 client, and each client may have many connections.
+func NewPool(server *Server, id clientID, max int) *Pool {
 	pool := &Pool{
 		id:          id,
-		idle:        make(chan *Connection),
+		idle:        make(chan *Connection, max),
 		idleTimeout: server.Config.IdleTimeout,
 		newConn:     make(chan *Connection),
 		askClean:    make(chan struct{}),
@@ -36,7 +37,7 @@ func NewPool(server *Server, id clientID) *Pool {
 		getSize:     make(chan *PoolSize),
 	}
 
-	go pool.keepRunning()
+	go pool.keepRunning() //gofunc:3 (N)
 
 	return pool
 }

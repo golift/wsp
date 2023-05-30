@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -32,9 +33,9 @@ type Connection struct {
 	status    ConnectionStatus
 	idleSince time.Time
 	lock      sync.Mutex
-	// nextResponse is the channel of channel to wait an HTTP response.
+	// nextResponse is the channel to wait for an HTTP response.
 	//
-	// In advance, the `read` function waits to receive the HTTP response as a separate thread "reader".
+	// The `read` function waits to receive the HTTP response as a separate thread reader.
 	// (See https://github.com/hgsgtk/wsp/blob/29cc73bbd67de18f1df295809166a7a5ef52e9fa/server/connection.go#L56 )
 	//
 	// When a "server" thread proxies, it sends the HTTP request to the peer over the WebSocket,
@@ -44,11 +45,12 @@ type Connection struct {
 	//
 	// After the thread "reader" detects that the HTTP response from the peer of the WebSocket connection has been written,
 	// it sends the value to the channel (chan io.Reader),
-	// and the "server" thread can proceed to process the rest procedures.
+	// and the "server" thread can proceed to process the rest of its procedures.
 	nextResponse chan chan io.Reader
 }
 
 // NewConnection returns a new Connection.
+// Each connection gets a go routine to read (wait for) messages.
 func NewConnection(pool *Pool, ws *websocket.Conn) *Connection {
 	// Initialize a new Connection
 	conn := &Connection{
@@ -62,28 +64,26 @@ func NewConnection(pool *Pool, ws *websocket.Conn) *Connection {
 	conn.Release()
 
 	// Start to listen to incoming messages over the WebSocket connection.
-	go conn.read() //gofunc:3
+	go conn.read() //gofunc:4 (N)
 
 	return conn
 }
 
 // read the incoming message from the connection.
-// Every connection gets a read() methood in a go routine.
+// Every connection has a read() method in a go routine.
 func (connection *Connection) read() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("Websocket crash recovered: %s", r)
+			log.Printf("Websocket crash recovered: %s\n%s", r, string(debug.Stack()))
 		}
 
 		connection.Close()
 	}()
 
 	for {
-		connection.lock.Lock()
-		if connection.status == Closed {
+		if connection.Status() == Closed {
 			break
 		}
-		connection.lock.Unlock()
 
 		// https://godoc.org/github.com/gorilla/websocket#hdr-Control_Messages
 		//
@@ -99,12 +99,10 @@ func (connection *Connection) read() {
 			break
 		}
 
-		connection.lock.Lock()
-		if connection.status != Busy {
-			// We received a wild unexpected message, but we're goin to silently ignore it.
+		if connection.Status() != Busy {
+			// We received a wild unexpected message, but we're going to silently ignore it.
 			break
 		}
-		connection.lock.Unlock()
 
 		// When it gets here, it is expected to be either a HttpResponse or a HttpResponseBody has been returned.
 		//
@@ -124,6 +122,12 @@ func (connection *Connection) read() {
 		// This notifies that it is done with the reader.
 		<-resp
 	}
+}
+func (connection *Connection) Status() ConnectionStatus {
+	connection.lock.Lock()
+	defer connection.lock.Unlock()
+
+	return connection.status
 }
 
 // Proxy a HTTP request through the Proxy over the websocket connection.
@@ -197,10 +201,9 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 
 	w.WriteHeader(httpResponse.StatusCode)
 
-	// [5]: Wait the HTTP response body is ready
-	// Get the HTTP Response body from the peer
-	// To do so send a new channel to the read() goroutine
-	// to get the next message reader
+	// [5]: Wait for the HTTP response body to be ready.
+	// Get the HTTP Response body from the peer.
+	// To do so send a new channel to the read() goroutine to get the next message reader.
 	responseBodyChannel := make(chan (io.Reader))
 	connection.nextResponse <- responseBodyChannel
 
@@ -234,32 +237,34 @@ func (connection *Connection) Take() bool {
 	connection.lock.Lock()
 	defer connection.lock.Unlock()
 
-	if connection.status == Closed {
+	switch connection.status {
+	case Closed:
 		return false
-	}
-
-	if connection.status == Busy {
+	case Busy:
 		return false
+	default:
+		connection.status = Busy
+		return true
 	}
-
-	connection.status = Busy
-
-	return true
 }
 
-// Release notifies that this connection is ready to use again.
+// Release signals that this connection is ready to be used again.
 func (connection *Connection) Release() {
 	connection.lock.Lock()
 	defer connection.lock.Unlock()
+	connection.release()
+}
 
+// release the connection without lock.
+func (connection *Connection) release() {
 	if connection.status == Closed {
 		return
 	}
 
 	connection.idleSince = time.Now()
 	connection.status = Idle
-
-	go connection.pool.Offer(connection) //gofunc:4
+	// stick this connection into the idle buffer pool.
+	connection.pool.idle <- connection
 }
 
 // Close the connection.

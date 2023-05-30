@@ -21,6 +21,7 @@ var (
 	ErrInvalidKey    = fmt.Errorf("invalid secret key provided")
 	ErrNoProxyTarget = fmt.Errorf("no proxy target found for request")
 	ErrNoDestination = fmt.Errorf("x-proxy-destination header invalid")
+	ErrInvalidData   = fmt.Errorf("invalid data received")
 )
 
 // Server is a Reverse HTTP Proxy over WebSocket.
@@ -43,6 +44,7 @@ type newPool struct {
 	sock     *websocket.Conn
 	clientID clientID
 	size     int
+	max      int
 }
 
 // ConnectionRequest is used to request a proxy connection from the dispatcher.
@@ -58,7 +60,7 @@ func NewServer(config *Config) *Server {
 	return &Server{
 		Config:     config,
 		upgrader:   websocket.Upgrader{},
-		newPool:    make(chan *newPool),
+		newPool:    make(chan *newPool, 100),
 		dispatcher: make(chan *ConnectionRequest),
 		pools:      make(map[clientID]*Pool),
 	}
@@ -302,7 +304,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 
 	// 2. Wait a greeting message from the peer and parse it.
 	// The first message should contain the remote Proxy name and pool size.
-	clientID, size, err := parseGreeting(sock)
+	clientID, size, max, err := parseGreeting(sock)
 	if err != nil {
 		wsp.ProxyError(w, err)
 		sock.Close()
@@ -311,7 +313,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Register the connection into server pools.
-	s.newPool <- &newPool{sock, clientID, size}
+	s.newPool <- &newPool{sock, clientID, size, max}
 }
 
 // 0. Validate the provided secret key.
@@ -335,28 +337,37 @@ func (s *Server) validateKey(header http.Header) error {
 }
 
 // 2. Wait a greeting message from the peer and parse it.
-func parseGreeting(sock *websocket.Conn) (clientID, int, error) {
+func parseGreeting(sock *websocket.Conn) (clientID, int, int, error) {
 	_, greeting, err := sock.ReadMessage()
 	if err != nil {
-		return "", 0, fmt.Errorf("unable to read greeting message: %w", err)
+		return "", 0, 0, fmt.Errorf("unable to read greeting message: %w", err)
 	}
 
 	// Parse the greeting message
 	split := strings.Split(string(greeting), "_")
+	if len(split) != 3 {
+		return "", 0, 0, fmt.Errorf("%w: greeting separator count is wrong", ErrInvalidData)
+	}
+
 	clientID := clientID(split[0])
 
 	size, err := strconv.Atoi(split[1])
 	if err != nil {
-		return "", 0, fmt.Errorf("unable to parse greeting message: %w", err)
+		return "", 0, 0, fmt.Errorf("unable to parse greeting message: %w", err)
 	}
 
-	return clientID, size, nil
+	max, err := strconv.Atoi(split[2])
+	if err != nil {
+		return "", 0, 0, fmt.Errorf("unable to parse greeting message: %w", err)
+	}
+
+	return clientID, size, max, nil
 }
 
 // 3. Register the connection into server pools.
 func (s *Server) registerPool(newPool *newPool) {
 	if pool, ok := s.pools[newPool.clientID]; !ok || pool == nil {
-		s.pools[newPool.clientID] = NewPool(s, newPool.clientID)
+		s.pools[newPool.clientID] = NewPool(s, newPool.clientID, newPool.max)
 	}
 
 	// update pool size
@@ -375,7 +386,7 @@ func (s *Server) Shutdown() {
 	ctx, cancel := context.WithTimeout(context.Background(), s.server.ReadTimeout)
 	defer cancel()
 
-	s.server.Shutdown(ctx)
+	_ = s.server.Shutdown(ctx)
 	close(s.newPool)
 }
 

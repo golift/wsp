@@ -60,10 +60,11 @@ func (connection *Connection) Connect(ctx context.Context) error {
 	log.Printf("Connected to %s", connection.pool.target)
 
 	// Send the greeting message with proxy id and wanted pool size.
-	greeting := fmt.Sprintf("%s_%d",
+	greeting := fmt.Sprintf("%s_%d_%d",
 		// this is a random ID. For future purposes, it needs to be configurable.
 		connection.pool.client.Config.ID,
 		connection.pool.client.Config.PoolIdleSize,
+		connection.pool.client.Config.PoolMaxSize,
 	)
 
 	if err := connection.ws.WriteMessage(websocket.TextMessage, []byte(greeting)); err != nil {

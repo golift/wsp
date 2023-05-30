@@ -15,6 +15,7 @@ import (
 
 // Status of a Connection.
 const (
+	UNKNOWN    = -1
 	CONNECTING = iota
 	IDLE
 	RUNNING
@@ -27,18 +28,21 @@ const (
 
 // Connection handle a single websocket (HTTP/TCP) connection to an Server.
 type Connection struct {
-	pool   *Pool
-	ws     *websocket.Conn
-	status int
+	pool      *Pool
+	ws        *websocket.Conn
+	status    int
+	setStatus chan int
+	getStatus chan int
 }
 
 // NewConnection create a Connection object.
 func NewConnection(pool *Pool) *Connection {
-	c := new(Connection)
-	c.pool = pool
-	c.status = CONNECTING
-
-	return c
+	return &Connection{
+		pool:      pool,
+		status:    CONNECTING,
+		setStatus: make(chan int),
+		getStatus: make(chan int),
+	}
 }
 
 // Connect to the remote server using a HTTP websocket.
@@ -61,21 +65,58 @@ func (connection *Connection) Connect(ctx context.Context) error {
 
 	// Send the greeting message with proxy id and wanted pool size.
 	greeting := fmt.Sprintf("%s_%d_%d",
-		// this is a random ID. For future purposes, it needs to be configurable.
 		connection.pool.client.Config.ID,
 		connection.pool.client.Config.PoolIdleSize,
 		connection.pool.client.Config.PoolMaxSize,
 	)
 
 	if err := connection.ws.WriteMessage(websocket.TextMessage, []byte(greeting)); err != nil {
-		connection.Close()
+		connection.remove()
 		return fmt.Errorf("greeting failure: %w", err)
 	}
 
 	// We are connected to the server, now start a go routine that waits for incoming server requests.
 	go connection.serve(ctx)
+	go connection.keepAlive(ctx)
 
 	return nil
+}
+
+// Keep connection alive.
+func (connection *Connection) keepAlive(ctx context.Context) {
+	ticker := time.NewTicker(keepAliveInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case tick := <-ticker.C:
+			err := connection.ws.WriteControl(websocket.PingMessage, []byte{}, tick.Add(keepAliveTimeout))
+			if err != nil {
+				log.Printf("Keep-alive failure: %v", err)
+				connection.remove()
+
+				return
+			}
+		case <-ctx.Done():
+			return
+		case status, ok := <-connection.setStatus:
+			if !ok {
+				return
+			}
+
+			if status == UNKNOWN { // signal to return status.
+				connection.getStatus <- connection.status
+				continue
+			}
+
+			connection.status = status
+		}
+	}
+}
+
+func (connection *Connection) Status() int {
+	connection.setStatus <- UNKNOWN
+	return <-connection.getStatus
 }
 
 // serve is the main loop, it:
@@ -88,30 +129,19 @@ func (connection *Connection) Connect(ctx context.Context) error {
 func (connection *Connection) serve(ctx context.Context) {
 	defer connection.Close()
 
-	// Keep connection alive. This go routine may leak.
-	go func() {
-		ticker := time.NewTicker(keepAliveInterval)
-		defer ticker.Stop()
-
-		for tick := range ticker.C {
-			err := connection.ws.WriteControl(websocket.PingMessage, []byte{}, tick.Add(keepAliveTimeout))
-			if err != nil {
-				connection.Close()
-			}
-		}
-	}()
-
 	for {
 		// Read request
-		connection.status = IDLE
+		connection.setStatus <- IDLE
 
 		_, jsonRequest, err := connection.ws.ReadMessage()
 		if err != nil {
-			log.Println("Unable to read request", err)
+			connection.setStatus <- RUNNING
+			log.Println("Unable to read request:", err)
+
 			break
 		}
 
-		connection.status = RUNNING
+		connection.setStatus <- RUNNING
 		httpRequest := new(wsp.HTTPRequest)
 
 		// Deserialize request
@@ -218,8 +248,15 @@ func (connection *Connection) error(msg string) bool {
 	return false
 }
 
-// Close close the ws/tcp connection and remove it from the pool.
+// Close the ws/tcp connection.
 func (connection *Connection) Close() {
-	connection.pool.remove(connection)
 	connection.ws.Close()
+	close(connection.setStatus)
+	close(connection.getStatus)
+}
+
+// remove and close the ws/tcp connection from the pool.
+func (connection *Connection) remove() {
+	connection.Close()
+	connection.pool.Remove(connection)
 }

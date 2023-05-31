@@ -33,18 +33,16 @@ type req2Handler struct {
 }
 
 func (r *req2Handler) Write(data []byte) (int, error) {
-	if r.body == nil {
-		r.mu.Lock()
-		defer r.mu.Unlock()
-		r.err = true
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
+	if r.body == nil {
+		r.err = true
 		return 0, ErrNilBody
 	}
 
 	size, err := r.body.Write(data)
 	if err != nil {
-		r.mu.Lock()
-		defer r.mu.Unlock()
 		r.err = true
 	}
 

@@ -176,6 +176,7 @@ func (connection *Connection) serve(ctx context.Context) {
 
 			continue
 		}
+
 		// This is where a local client sends the server's request off to the Internet.
 		resp, err := connection.pool.client.client.Do(req)
 		if err != nil {

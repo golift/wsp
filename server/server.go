@@ -45,6 +45,7 @@ type newPool struct {
 	clientID clientID
 	size     int
 	max      int
+	secret   string
 }
 
 // ConnectionRequest is used to request a proxy connection from the dispatcher.
@@ -290,7 +291,8 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 // Receives the WebSocket upgrade handshake request from wsp_client.
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// 0. Validate the provided secret key.
-	if err := s.validateKey(r.Header); err != nil {
+	secret, err := s.validateKey(r.Header)
+	if err != nil {
 		mulery.ProxyError(w, err)
 		return
 	}
@@ -313,27 +315,29 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 3. Register the connection into server pools.
-	s.newPool <- &newPool{sock, clientID, size, max}
+	s.newPool <- &newPool{sock, clientID, size, max, secret}
 }
 
 // 0. Validate the provided secret key.
-func (s *Server) validateKey(header http.Header) error {
+func (s *Server) validateKey(header http.Header) (string, error) {
 	// If a custom key validator is provided, run that.
 	if s.Config.KeyValidator != nil {
-		if err := s.Config.KeyValidator(header); err != nil {
-			return fmt.Errorf("custom key validation failed: %v", err)
+		secret, err := s.Config.KeyValidator(header)
+		if err != nil {
+			return "", fmt.Errorf("custom key validation failed: %v", err)
 		}
 
-		return nil
+		return secret, nil
 	}
 
 	// Otherwise run the default validator.
 	secretKey := header.Get("X-SECRET-KEY")
 	if secretKey != s.Config.SecretKey {
-		return ErrInvalidKey
+		return "", ErrInvalidKey
 	}
 
-	return nil
+	// Do not return the "configured" secret key.
+	return "", nil
 }
 
 // 2. Wait a greeting message from the peer and parse it.
@@ -367,7 +371,7 @@ func parseGreeting(sock *websocket.Conn) (clientID, int, int, error) {
 // 3. Register the connection into server pools.
 func (s *Server) registerPool(newPool *newPool) {
 	if pool, ok := s.pools[newPool.clientID]; !ok || pool == nil {
-		s.pools[newPool.clientID] = NewPool(s, newPool.clientID, newPool.max)
+		s.pools[newPool.clientID] = NewPool(s, newPool.clientID, newPool.max, newPool.secret)
 	}
 
 	// update pool size

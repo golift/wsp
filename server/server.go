@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/root-gg/wsp"
+	"golift.io/mulery"
 )
 
 var (
@@ -235,13 +235,13 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// [1]: Receive requests to be proxied; parse destination URL.
 	dstURL := r.Header.Get("X-PROXY-DESTINATION")
 	if dstURL == "" {
-		wsp.ProxyError(w, fmt.Errorf("%w: not provided", ErrNoDestination))
+		mulery.ProxyError(w, fmt.Errorf("%w: not provided", ErrNoDestination))
 		return
 	}
 
 	URL, err := url.Parse(dstURL)
 	if err != nil {
-		wsp.ProxyError(w, fmt.Errorf("parsing X-PROXY-DESTINATION header: %w", err))
+		mulery.ProxyError(w, fmt.Errorf("parsing X-PROXY-DESTINATION header: %w", err))
 		return
 	}
 
@@ -249,7 +249,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[%s] %s", r.Method, r.URL.String())
 
 	if len(s.pools) == 0 {
-		wsp.ProxyError(w, fmt.Errorf("%w: no pools registered", ErrNoProxyTarget))
+		mulery.ProxyError(w, fmt.Errorf("%w: no pools registered", ErrNoProxyTarget))
 		return
 	}
 
@@ -272,7 +272,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	connection := <-request.connection
 	if connection == nil {
 		// Dispatcher is `nil` which means the target has no pool.
-		wsp.ProxyError(w, fmt.Errorf("%w: %s", ErrNoProxyTarget, request.target))
+		mulery.ProxyError(w, fmt.Errorf("%w: %s", ErrNoProxyTarget, request.target))
 		return
 	}
 
@@ -282,7 +282,7 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 		connection.Close()
 		// Try to return an error to the client.
 		// This might fail if response headers have already been sent.
-		wsp.ProxyError(w, fmt.Errorf("tunneling failure, connection closed: %w", err))
+		mulery.ProxyError(w, fmt.Errorf("tunneling failure, connection closed: %w", err))
 	}
 }
 
@@ -291,14 +291,14 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// 0. Validate the provided secret key.
 	if err := s.validateKey(r.Header); err != nil {
-		wsp.ProxyError(w, err)
+		mulery.ProxyError(w, err)
 		return
 	}
 
 	// 1. Upgrade a received HTTP request to a WebSocket connection.
 	sock, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		wsp.ProxyError(w, fmt.Errorf("http upgrade failed: %w", err))
+		mulery.ProxyError(w, fmt.Errorf("http upgrade failed: %w", err))
 		return
 	}
 
@@ -306,7 +306,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// The first message should contain the remote Proxy name and pool size.
 	clientID, size, max, err := parseGreeting(sock)
 	if err != nil {
-		wsp.ProxyError(w, err)
+		mulery.ProxyError(w, err)
 		sock.Close()
 
 		return

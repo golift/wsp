@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/root-gg/wsp"
+	"golift.io/mulery"
 )
 
 // Status of a Connection.
@@ -142,18 +142,18 @@ func (connection *Connection) serve(ctx context.Context) {
 		}
 
 		connection.setStatus <- RUNNING
-		httpRequest := new(wsp.HTTPRequest)
+		httpRequest := new(mulery.HTTPRequest)
 
 		// Deserialize request
 		err = json.Unmarshal(jsonRequest, httpRequest)
 		if err != nil {
-			connection.error(fmt.Sprintf("Unable to deserialize json http request: %s\n", err))
+			connection.error(fmt.Sprintf("Unable to deserialize json http request: %s", err))
 			break
 		}
 
-		req, err := wsp.UnserializeHTTPRequest(httpRequest)
+		req, err := mulery.UnserializeHTTPRequest(httpRequest)
 		if err != nil {
-			connection.error(fmt.Sprintf("Unable to deserialize http request: %v\n", err))
+			connection.error(fmt.Sprintf("Unable to deserialize http request: %v", err))
 			break
 		}
 
@@ -169,37 +169,25 @@ func (connection *Connection) serve(ctx context.Context) {
 		// Create a "fake" body.
 		req.Body = io.NopCloser(bodyReader)
 
+		if do := connection.pool.client.Config.Handler; do != nil {
+			if ok := connection.runMiddleware(req); !ok {
+				break
+			}
+
+			continue
+		}
 		// This is where a local client sends the server's request off to the Internet.
 		resp, err := connection.pool.client.client.Do(req)
 		if err != nil {
-			if connection.error(fmt.Sprintf("Unable to execute request: %v\n", err)) {
+			if connection.error(fmt.Sprintf("Unable to execute request: %v", err)) {
 				break
 			}
 
 			continue
 		}
 
-		// Turn the entire http response into a JSON response the server can parse.
-		jsonResponse, err := json.Marshal(wsp.SerializeHTTPResponse(resp))
-		if err != nil {
-			if connection.error(fmt.Sprintf("Unable to serialize response: %v\n", err)) {
-				break
-			}
-
-			continue
-		}
-
-		// This is where we send the Internet's (http request) response back to the server.
-		err = connection.ws.WriteMessage(websocket.TextMessage, jsonResponse)
-		if err != nil {
-			log.Printf("Unable to write response: %v", err)
-			break
-		}
-
-		// Pipe response body because an io.ReadCloser (http.Body) doesn't get serialized (above).
-		bodyWriter, err := connection.ws.NextWriter(websocket.BinaryMessage)
-		if err != nil {
-			log.Printf("Unable to get response body writer: %v", err)
+		bodyWriter := connection.writeResponseHeaders(resp)
+		if bodyWriter == nil {
 			break
 		}
 
@@ -214,11 +202,32 @@ func (connection *Connection) serve(ctx context.Context) {
 	}
 }
 
-// All calls to this method are in the method above.
+func (connection *Connection) writeResponseHeaders(resp *http.Response) io.WriteCloser {
+	// Turn the entire http response into a JSON response the server can parse.
+	jsonResponse, _ := json.Marshal(mulery.SerializeHTTPResponse(resp))
+
+	// This is where we send the Internet's (http request) response back to the server.
+	err := connection.ws.WriteMessage(websocket.TextMessage, jsonResponse)
+	if err != nil {
+		log.Printf("Unable to write response: %v", err)
+		return nil
+	}
+
+	// Pipe response body because an io.ReadCloser (http.Body) doesn't get serialized (above).
+	bodyWriter, err := connection.ws.NextWriter(websocket.BinaryMessage)
+	if err != nil {
+		log.Printf("Unable to get response body writer: %v", err)
+		return nil
+	}
+
+	return bodyWriter
+}
+
+// All calls to this method are in the two methods above.
 // Returns true if there's an error.
 func (connection *Connection) error(msg string) bool {
-	resp := wsp.NewHTTPResponse()
-	resp.StatusCode = wsp.ClientErrorCode
+	resp := mulery.NewHTTPResponse()
+	resp.StatusCode = mulery.ClientErrorCode
 
 	log.Println(msg)
 

@@ -3,10 +3,9 @@ package server
 import (
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
-	"gopkg.in/yaml.v2"
+	"golift.io/cnfgfile"
 )
 
 // Config configures a Server.
@@ -34,12 +33,7 @@ func NewConfig() *Config {
 func LoadConfiguration(path string) (*Config, error) {
 	config := NewConfig()
 
-	bytes, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read configuration: %w", err)
-	}
-
-	err = yaml.Unmarshal(bytes, config)
+	err := cnfgfile.Unmarshal(config, path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse configuration: %w", err)
 	}

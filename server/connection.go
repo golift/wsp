@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/root-gg/wsp"
+	"golift.io/mulery"
 )
 
 // ConnectionStatus is an enumeration type which represents the status of WebSocket connection.
@@ -135,7 +135,7 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 	log.Printf("proxy request to %s", connection.pool.id)
 
 	// [1]: Serialize HTTP request
-	jsonReq, err := json.Marshal(wsp.SerializeHTTPRequest(r))
+	jsonReq, err := json.Marshal(mulery.SerializeHTTPRequest(r))
 	if err != nil {
 		return fmt.Errorf("unable to serialize request: %w", err)
 	}
@@ -187,7 +187,7 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 	close(responseChannel)
 
 	// Deserialize the HTTP Response
-	httpResponse := new(wsp.HTTPResponse)
+	httpResponse := new(mulery.HTTPResponse)
 	if err := json.Unmarshal(jsonResponse, httpResponse); err != nil {
 		return fmt.Errorf("unable to unserialize http response: %w", err)
 	}

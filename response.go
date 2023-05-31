@@ -1,4 +1,4 @@
-package wsp
+package mulery
 
 import (
 	"log"

@@ -2,10 +2,10 @@ package client
 
 import (
 	"fmt"
-	"os"
+	"net/http"
 
 	uuid "github.com/nu7hatch/gouuid"
-	"gopkg.in/yaml.v2"
+	"golift.io/cnfgfile"
 )
 
 // Config is the required data to initialize a client proxy connection.
@@ -15,6 +15,9 @@ type Config struct {
 	PoolIdleSize int
 	PoolMaxSize  int
 	SecretKey    string
+	// Handler is an optional custom handler for all proxied requests.
+	// Leaving this nil makes all requests use an empty http.Client.
+	Handler func(http.ResponseWriter, *http.Request)
 }
 
 // NewConfig creates a new ProxyConfig.
@@ -26,16 +29,10 @@ func NewConfig() *Config {
 	}
 }
 
-// LoadConfiguration loads configuration from a YAML file.
 func LoadConfiguration(path string) (*Config, error) {
 	config := NewConfig()
 
-	bytes, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read configuration: %w", err)
-	}
-
-	err = yaml.Unmarshal(bytes, config)
+	err := cnfgfile.Unmarshal(config, path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse configuration: %w", err)
 	}

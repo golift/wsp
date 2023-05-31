@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/root-gg/wsp/server"
+	"golift.io/mulery/server"
 )
 
 func main() {

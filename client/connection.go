@@ -127,7 +127,7 @@ func (connection *Connection) Status() int {
 // As in the server code there is no buffering of HTTP request/response body.
 // As in the server if any error occurs the connection is closed/thrown.
 func (connection *Connection) serve(ctx context.Context) {
-	defer connection.Close()
+	defer connection.remove()
 
 	for {
 		// Read request
@@ -135,7 +135,6 @@ func (connection *Connection) serve(ctx context.Context) {
 
 		_, jsonRequest, err := connection.ws.ReadMessage()
 		if err != nil {
-			connection.setStatus <- RUNNING
 			log.Println("Unable to read request:", err)
 
 			break
@@ -267,6 +266,5 @@ func (connection *Connection) Close() {
 
 // remove and close the ws/tcp connection from the pool.
 func (connection *Connection) remove() {
-	connection.Close()
 	connection.pool.Remove(connection)
 }

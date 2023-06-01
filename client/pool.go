@@ -125,14 +125,16 @@ func (pool *Pool) Remove(conn *Connection) {
 	<-pool.repChan
 }
 
-func (pool *Pool) remove(conn *Connection) {
+func (pool *Pool) remove(connection *Connection) {
 	// This trick uses the fact that a slice shares the same backing array and capacity as the original,
 	// so the storage is reused for the filtered slice. Of course, the original contents are modified.
 	var filtered []*Connection // == nil
 
-	for _, c := range pool.connections {
-		if conn != c {
-			filtered = append(filtered, c)
+	for _, conn := range pool.connections {
+		if connection != conn {
+			filtered = append(filtered, conn)
+		} else {
+			conn.Close()
 		}
 	}
 

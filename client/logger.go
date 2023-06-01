@@ -43,7 +43,3 @@ func (l *DefaultLogger) Printf(format string, v ...interface{}) {
 
 // Validate DefaultLogger struct satisfies the Logger interface.
 var _ = Logger(&DefaultLogger{})
-
-func noLogs() Logger {
-	return &DefaultLogger{Silent: true}
-}

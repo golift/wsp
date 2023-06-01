@@ -49,7 +49,7 @@ func NewConfig() *Config {
 // NewClient creates a new Client.
 func NewClient(config *Config) *Client {
 	if config.Logger == nil {
-		config.Logger = noLogs()
+		config.Logger = &DefaultLogger{Silent: true}
 	}
 
 	return &Client{

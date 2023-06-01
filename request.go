@@ -14,7 +14,7 @@ type HTTPRequest struct {
 	RemoteAddr    string              `json:"remoteAddr"`
 	Host          string              `json:"host"`
 	Proto         string              `json:"proto"`
-	RequestURI    string              `json:"requestURI"`
+	RequestURI    string              `json:"requestUri"`
 }
 
 // SerializeHTTPRequest create a new HTTPRequest from a http.Request.

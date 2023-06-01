@@ -46,7 +46,7 @@ func NewPool(server *Server, id clientID, max int, hashSeed string) *Pool {
 		getSize:     make(chan *PoolSize),
 	}
 
-	go pool.keepRunning() //gofunc:3 (N)
+	go pool.keepRunning() // gofunc:3 (N)
 
 	return pool
 }

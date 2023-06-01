@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math/rand"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -56,18 +55,18 @@ type ConnectionRequest struct {
 
 // NewServer return a new Server instance.
 func NewServer(config *Config) *Server {
-	rand.Seed(time.Now().Unix()) // hmm
+	const defaultPoolBuffer = 100
 
 	return &Server{
 		Config:     config,
 		upgrader:   websocket.Upgrader{},
-		newPool:    make(chan *newPool, 100),
+		newPool:    make(chan *newPool, defaultPoolBuffer),
 		dispatcher: make(chan *ConnectionRequest),
 		pools:      make(map[clientID]*Pool),
 	}
 }
 
-// Start Server HTTP server.
+// Start HTTP server.
 func (s *Server) Start() {
 	smx := http.NewServeMux()
 	// XXX: I want to detach the handler function from the Server struct,
@@ -82,7 +81,7 @@ func (s *Server) Start() {
 
 	// Dispatch connection from available pools to client requests
 	// in a separate thread from the server thread.
-	go s.dispatchConnections() //gofunc:1
+	go s.dispatchConnections() // gofunc:1
 
 	s.server = &http.Server{
 		Addr:        fmt.Sprintf("%s:%d", s.Config.Host, s.Config.Port),
@@ -90,7 +89,7 @@ func (s *Server) Start() {
 		ReadTimeout: s.Config.Timeout,
 	}
 
-	go func() { //gofunc:2
+	go func() { // gofunc:2
 		err := s.server.ListenAndServe()
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalln("Web server failed, exiting:", err)
@@ -324,7 +323,7 @@ func (s *Server) validateKey(header http.Header) (string, error) {
 	if s.Config.KeyValidator != nil {
 		secret, err := s.Config.KeyValidator(header)
 		if err != nil {
-			return "", fmt.Errorf("custom key validation failed: %v", err)
+			return "", fmt.Errorf("custom key validation failed: %w", err)
 		}
 
 		return secret, nil
@@ -349,7 +348,7 @@ func parseGreeting(sock *websocket.Conn) (clientID, int, int, error) {
 
 	// Parse the greeting message
 	split := strings.Split(string(greeting), "_")
-	if len(split) != 3 {
+	if len(split) != 3 { //nolint:gomnd
 		return "", 0, 0, fmt.Errorf("%w: greeting separator count is wrong", ErrInvalidData)
 	}
 

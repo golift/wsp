@@ -73,7 +73,7 @@ func (connection *Connection) Connect(ctx context.Context) error {
 	}
 
 	// We are connected to the server, now start a go routine that waits for incoming server requests.
-	go connection.serve(ctx)
+	go connection.serve()
 	go connection.keepAlive()
 
 	return nil
@@ -120,18 +120,18 @@ func (connection *Connection) Status() int {
 //
 // As in the server code there is no buffering of HTTP request/response body.
 // As in the server if any error occurs the connection is closed/thrown.
-func (connection *Connection) serve(ctx context.Context) {
+func (connection *Connection) serve() {
 	defer connection.pool.Remove(connection)
 
 	for {
-		if !connection.serveHandler(ctx) {
+		if !connection.serveHandler() {
 			return
 		}
 	}
 }
 
 // serveHandler is the main loop that handles incoming http requests from the server we're connected to.
-func (connection *Connection) serveHandler(ctx context.Context) bool {
+func (connection *Connection) serveHandler() bool {
 	// Read request
 	connection.setStatus <- IDLE
 
@@ -145,9 +145,8 @@ func (connection *Connection) serveHandler(ctx context.Context) bool {
 	}
 
 	connection.setStatus <- RUNNING
-	httpRequest := new(mulery.HTTPRequest)
 
-	// Deserialize request.
+	httpRequest := new(mulery.HTTPRequest) // Deserialize request.
 	if err := json.Unmarshal(jsonRequest, httpRequest); err != nil {
 		connection.error(fmt.Sprintf("Deserializing json tunnel request: %s", err))
 		return false
@@ -199,7 +198,7 @@ func (connection *Connection) defaultHandler(req *http.Request) bool {
 
 func (connection *Connection) writeResponseHeaders(resp *http.Response) io.WriteCloser {
 	// Turn the entire http response into a JSON response the server can parse.
-	jsonResponse, _ := json.Marshal(mulery.SerializeHTTPResponse(resp))
+	jsonResponse, _ := json.Marshal(mulery.SerializeHTTPResponse(resp)) //nolint:errchkjson // it wont error.
 
 	// This is where we send the Internet's (http request) response back to the server.
 	err := connection.ws.WriteMessage(websocket.TextMessage, jsonResponse)

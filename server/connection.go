@@ -64,7 +64,7 @@ func NewConnection(pool *Pool, ws *websocket.Conn) *Connection {
 	conn.Release()
 
 	// Start to listen to incoming messages over the WebSocket connection.
-	go conn.read() //gofunc:4 (N)
+	go conn.read() // gofunc:4 (N)
 
 	return conn
 }
@@ -136,7 +136,7 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 	defer func() {
 		if r := recover(); r != nil {
 			// https://github.com/golang/go/blob/b100e127ca0e398fbb58d04d04e2443b50b3063e/src/runtime/chan.go#LL206C15-L206C15
-			if err := r.(error); err != nil && err.Error() != "send on closed channel" { // ignore this specific panic.
+			if err, _ := r.(error); err != nil && err.Error() != "send on closed channel" { // ignore this specific panic.
 				log.Printf("panic error: %v\n%s", err, string(debug.Stack()))
 			} else if err == nil {
 				log.Printf("panic: %v\n%s", r, string(debug.Stack()))

@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-// This probably never happens, but it's better than a panic in case it does.
+// ErrNilBody probably never happens, but it's better than a panic in case it does.
 var ErrNilBody = fmt.Errorf("got Write before WriteHeaders, body is nil")
 
 type req2Handler struct {
@@ -34,7 +34,7 @@ func (connection *Connection) customHandler(req *http.Request) bool {
 }
 
 // Write satisfies the ResponseWriter interface and handles
-// transporting the contect from the upstream to the downstream.
+// transporting the content from the upstream to the downstream.
 func (r *req2Handler) Write(data []byte) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -45,13 +45,14 @@ func (r *req2Handler) Write(data []byte) (int, error) {
 	}
 
 	size, err := r.body.Write(data)
-	if err != nil {
-		r.err = true
-	}
-
 	r.resp.ContentLength += int64(size)
 
-	return size, err
+	if err != nil {
+		r.err = true
+		return size, fmt.Errorf("tunnel write failed: %w", err)
+	}
+
+	return size, nil
 }
 
 // WriteHeader satisfies the ResponseWriter interface and sends the response

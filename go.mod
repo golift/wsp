@@ -3,8 +3,8 @@ module golift.io/mulery
 go 1.19
 
 require (
+	github.com/gofrs/uuid/v5 v5.0.0
 	github.com/gorilla/websocket v1.5.0
-	github.com/nu7hatch/gouuid v0.0.0-20131221200532-179d4d0c4d8d
 	golift.io/cnfgfile v0.0.0-20230531075023-f880041cc0a0
 )
 

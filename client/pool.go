@@ -3,11 +3,10 @@ package client
 import (
 	"context"
 	"fmt"
-	"log"
 	"time"
 )
 
-// Pool manage a pool of connection to a remote Server.
+// Pool of connections to a remote Server.
 type Pool struct {
 	client      *Client
 	target      string
@@ -18,6 +17,7 @@ type Pool struct {
 	repSize     chan *PoolSize
 	delChan     chan *Connection
 	repChan     chan struct{}
+	shutdown    bool
 }
 
 // PoolSize represent the number of open connections per status.
@@ -89,16 +89,14 @@ func (pool *Pool) Start(ctx context.Context) {
 // The garbage collector runs every second.
 // If the size of the pool is not equivalent to the desired size,
 // then N go functions are created that add additional pool connections.
-// If the connection fails, the connection is removed form the pool.
-//
-// This method was also being called every time a server makes a request, that was removed.
+// If the connection fails, the connection is removed from the pool.
 func (pool *Pool) connector(ctx context.Context) {
 	poolSize := pool.size()
-	// Create enough connection to fill the pool
+	// Create enough connection to fill the pool.
 	toCreate := pool.client.Config.PoolIdleSize - poolSize.Idle
 
-	// Create only one connection if the pool is empty
-	if poolSize.Total == 0 {
+	// Create only one connection if the pool is empty.
+	if poolSize.Total == 0 && toCreate < 1 {
 		toCreate = 1
 	}
 
@@ -108,11 +106,11 @@ func (pool *Pool) connector(ctx context.Context) {
 	}
 
 	// Try to reach ideal pool size.
-	for i := 0; i < toCreate; i++ {
+	for ; toCreate > 0; toCreate-- {
 		// This is the only place a connection is added to the pool.
 		conn := NewConnection(pool)
 		if err := conn.Connect(ctx); err != nil {
-			log.Printf("Unable to connect to %s: %s", pool.target, err)
+			pool.client.Errorf("Connecting to tunnel @ %s: %s", pool.target, err)
 		} else {
 			pool.connections = append(pool.connections, conn)
 		}
@@ -121,8 +119,10 @@ func (pool *Pool) connector(ctx context.Context) {
 
 // Remove a connection from the pool.
 func (pool *Pool) Remove(conn *Connection) {
-	pool.delChan <- conn
-	<-pool.repChan
+	if !pool.shutdown {
+		pool.delChan <- conn
+		<-pool.repChan
+	}
 }
 
 func (pool *Pool) remove(connection *Connection) {
@@ -143,6 +143,7 @@ func (pool *Pool) remove(connection *Connection) {
 
 // Shutdown and close all connections in the pool.
 func (pool *Pool) Shutdown() {
+	pool.shutdown = true
 	close(pool.done)
 }
 

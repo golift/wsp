@@ -123,6 +123,7 @@ func (connection *Connection) read() {
 		<-resp
 	}
 }
+
 func (connection *Connection) Status() ConnectionStatus {
 	connection.lock.Lock()
 	defer connection.lock.Unlock()
@@ -132,6 +133,17 @@ func (connection *Connection) Status() ConnectionStatus {
 
 // Proxy a HTTP request through the Proxy over the websocket connection.
 func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Request) error {
+	defer func() {
+		if r := recover(); r != nil {
+			// https://github.com/golang/go/blob/b100e127ca0e398fbb58d04d04e2443b50b3063e/src/runtime/chan.go#LL206C15-L206C15
+			if err := r.(error); err != nil && err.Error() != "send on closed channel" { // ignore this specific panic.
+				log.Printf("panic error: %v\n%s", err, string(debug.Stack()))
+			} else if err == nil {
+				log.Printf("panic: %v\n%s", r, string(debug.Stack()))
+			}
+		}
+	}()
+
 	log.Printf("proxy request to %s", connection.pool.id)
 
 	// [1]: Serialize HTTP request
@@ -281,12 +293,10 @@ func (connection *Connection) close() {
 	}
 
 	log.Printf("Closing connection from %s", connection.pool.id)
-
 	// Unlock a possible read() wild message
 	close(connection.nextResponse)
 	// Close the underlying TCP connection
 	connection.ws.Close()
-
 	// This must be executed *before* lock.Unlock()
 	connection.status = Closed
 }

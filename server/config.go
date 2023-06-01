@@ -1,11 +1,8 @@
 package server
 
 import (
-	"fmt"
 	"net/http"
 	"time"
-
-	"golift.io/cnfgfile"
 )
 
 // Config configures a Server.
@@ -30,18 +27,6 @@ func NewConfig() *Config {
 		Host:        "127.0.0.1",
 		Port:        8080,
 		Timeout:     time.Second,
-		IdleTimeout: time.Minute,
+		IdleTimeout: time.Minute + time.Second,
 	}
-}
-
-// LoadConfiguration loads configuration from a YAML file.
-func LoadConfiguration(path string) (*Config, error) {
-	config := NewConfig()
-
-	err := cnfgfile.Unmarshal(config, path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse configuration: %w", err)
-	}
-
-	return config, nil
 }

@@ -2,30 +2,21 @@ package server
 
 import (
 	"context"
-	"fmt"
-	"net"
 	"net/http"
-	"strings"
 	"time"
-)
 
-const defaultPort = 8080
+	"github.com/gorilla/websocket"
+)
 
 // Config configures a Server.
 type Config struct {
-	Host        string        `json:"host" toml:"host" yaml:"host" xml:"host"`
-	Port        int           `json:"port" toml:"port" yaml:"port" xml:"port"`
 	Timeout     time.Duration `json:"timeout" toml:"timeout" yaml:"timeout" xml:"timeout"`
-	IdleTimeout time.Duration `json:"idleTimeout" toml:"idle_timeout" yaml:"idletimeout" xml:"idle_timeout"`
-	SecretKey   string        `json:"secretKey" toml:"secret_key" yaml:"secretkey" xml:"secret_key"`
-	SSLCrtPath  string        `json:"sslCrtPath" toml:"ssl_crt_pah" yaml:"sslCrtPath" xml:"ssl_crt_path"`
-	SSLKeyPath  string        `json:"sslKeyPath" toml:"ssl_key_path" yaml:"sslKeyPath" xml:"ssl_key_path"`
+	IdleTimeout time.Duration `json:"idleTimeout" toml:"idle_timeout" yaml:"idleTimeout" xml:"idle_timeout"`
+	SecretKey   string        `json:"secretKey" toml:"secret_key" yaml:"secretKey" xml:"secret_key"`
 	// IDHeader sets the upstream header to parse for a remote client.
 	// Default behavior is to send requests to clients randomly.
-	// If this value is set, reququests can only be directed to clients with this header.
+	// If this value is set, requests can only be directed to clients by provding the client ID in this header.
 	IDHeader string `json:"idHeader" toml:"id_header" yaml:"idHeader" xml:"id_header"`
-	// List of IPs or CIDRs that are allowed to make requests to clients.
-	Upstreams []string `json:"upstreams" toml:"upstreams" yaml:"upstreams" xml:"upstreams"`
 	// If a KeyValidator method is provided, then Secretkey is ignored.
 	// If the validator returns a string then all pool IDs become a
 	// sha256 of that string and the client's generated or provided id.
@@ -35,90 +26,54 @@ type Config struct {
 	KeyValidator func(context.Context, http.Header) (string, error) `json:"-" toml:"-" yaml:"-" xml:"-"`
 }
 
+// Server is a Reverse HTTP Proxy over WebSocket.
+// This is the Server part, Clients offer websocket connections,
+// and those are pooled to transfer HTTP Requests and responses.
+type Server struct {
+	Config   *Config
+	upgrader websocket.Upgrader
+	// In pools, keep connections with WebSocket peers.
+	pools   map[clientID]*Pool
+	newPool chan *poolConfig
+	// Through dispatcher channel it communicates between "http server" thread and "dispatcher" thread.
+	// "server" thread sends the value to this channel when accepting requests in the endpoint /requests,
+	// and "dispatcher" thread reads this channel.
+	dispatcher chan *dispatchRequest
+}
+
+// poolConfig is a struct for transitting a new pool's data through a channel.
+type poolConfig struct {
+	sock     *websocket.Conn
+	clientID clientID
+	size     int
+	max      int
+	secret   string
+}
+
+// dispatchRequest is used to request a proxy connection from the dispatcher.
+// By sending it through a channel.
+type dispatchRequest struct {
+	connection chan *Connection
+	client     clientID
+}
+
 // NewConfig creates a new ProxyConfig.
 func NewConfig() *Config {
 	return &Config{
-		Host:        "127.0.0.1",
-		Port:        defaultPort,
 		Timeout:     time.Second,
 		IdleTimeout: time.Minute + time.Second,
 	}
 }
 
-// AllowedIPs determines who make requests.
-type AllowedIPs struct {
-	Input []string
-	Nets  []*net.IPNet
-}
+// NewServer return a new Server instance.
+func NewServer(config *Config) *Server {
+	const defaultPoolBuffer = 100
 
-var _ = fmt.Stringer(AllowedIPs{})
-
-// String turns a list of allowedIPs into a printable masterpiece.
-func (n AllowedIPs) String() string {
-	if len(n.Nets) < 1 {
-		return "(none)"
+	return &Server{
+		Config:     config,
+		upgrader:   websocket.Upgrader{},
+		newPool:    make(chan *poolConfig, defaultPoolBuffer),
+		dispatcher: make(chan *dispatchRequest),
+		pools:      make(map[clientID]*Pool),
 	}
-
-	s := ""
-
-	for i := range n.Nets {
-		if s != "" {
-			s += ", "
-		}
-
-		s += n.Nets[i].String()
-	}
-
-	return s
-}
-
-// Contains returns true if an IP is allowed.
-func (n AllowedIPs) Contains(ip string) bool {
-	ip = strings.Trim(ip[:strings.LastIndex(ip, ":")], "[]")
-
-	for i := range n.Nets {
-		if n.Nets[i].Contains(net.ParseIP(ip)) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// MakeIPs turns a list of CIDR strings (or plain IPs) into a list of net.IPNet.
-// This "allowed" list is later used to check incoming IPs from web requests.
-func MakeIPs(upstreams []string) AllowedIPs {
-	a := AllowedIPs{
-		Input: make([]string, len(upstreams)),
-		Nets:  []*net.IPNet{},
-	}
-
-	for idx, ipAddr := range upstreams {
-		a.Input[idx] = ipAddr
-
-		if !strings.Contains(ipAddr, "/") {
-			if strings.Contains(ipAddr, ":") {
-				ipAddr += "/128"
-			} else {
-				ipAddr += "/32"
-			}
-		}
-
-		if _, i, err := net.ParseCIDR(ipAddr); err == nil {
-			a.Nets = append(a.Nets, i)
-		}
-	}
-
-	return a
-}
-
-func (s *Server) validateUpstream(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-		if !s.allow.Contains(req.RemoteAddr) {
-			resp.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-
-		next.ServeHTTP(resp, req)
-	})
 }

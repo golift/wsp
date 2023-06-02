@@ -1,47 +1,30 @@
-package mulery
+package main
 
-import "log"
+import (
+	"flag"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
-const SecretKeyHeader = "x-secret-key"
+	"golift.io/mulery/mulery"
+)
 
-// Logger is the log-output input interface for this package.
-// Provide your own log interface, or use the DefaultLogger to simply wrap the log package.
-// Leaving the interface nil disables all log output.
-type Logger interface {
-	// Debugf is used sparingly.
-	Debugf(string, ...interface{})
-	// Errorf is the most used of the loggers.
-	Errorf(string, ...interface{})
-	// Printf is only used when a custom Handler is not provided.
-	Printf(string, ...interface{})
-}
+func main() {
+	configFile := flag.String("config", "mulery.conf", "config file path")
+	flag.Parse()
 
-// DefaultLogger is a simple wrapper around the provided Logger interface.
-// Use this if you only need simple log output.
-type DefaultLogger struct {
-	Silent bool
-}
-
-// Debugf prints a message with DEBUG prefixed.
-func (l *DefaultLogger) Debugf(format string, v ...interface{}) {
-	if !l.Silent {
-		log.Printf("[DEBUG] "+format, v...)
+	// Load configuration file.
+	config, err := mulery.LoadConfigFile(*configFile)
+	if err != nil {
+		log.Fatalf("Unable to load configuration: %s", err)
 	}
-}
 
-// Errorf prints a message with ERROR prefixed.
-func (l *DefaultLogger) Errorf(format string, v ...interface{}) {
-	if !l.Silent {
-		log.Printf("[ERROR] "+format, v...)
-	}
-}
+	sigCh := make(chan os.Signal, 1)
 
-// Printf prints a message with INFO prefixed.
-func (l *DefaultLogger) Printf(format string, v ...interface{}) {
-	if !l.Silent {
-		log.Printf("[INFO] "+format, v...)
-	}
+	config.Start()
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	// Wait here for a signal to shut down.
+	<-sigCh
+	config.Shutdown()
 }
-
-// Validate DefaultLogger struct satisfies the Logger interface.
-var _ = Logger(&DefaultLogger{})

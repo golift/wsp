@@ -1,4 +1,4 @@
-package mulery
+package mulch
 
 import (
 	"net/http"

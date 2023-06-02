@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"golift.io/mulery"
+	"golift.io/mulery/mulch"
 )
 
 // Status of a Connection.
@@ -44,17 +44,17 @@ func NewConnection(pool *Pool) *Connection {
 	}
 }
 
-// Connect to the remote server using a HTTP websocket.
+// Connect to the remote server using an HTTP websocket.
 func (connection *Connection) Connect(ctx context.Context) error {
 	connection.pool.client.Debugf("Connecting to tunnel @ %s", connection.pool.target)
 
 	var err error
-	// Create a new TCP(/TLS) connection (no use of net.http)
+	// Create a new TCP(/TLS) connection (no use of net.http).
 	//nolint:bodyclose // Gets closed in the Close() method.
 	connection.ws, _, err = connection.pool.client.dialer.DialContext(
 		ctx,
 		connection.pool.target,
-		http.Header{mulery.SecretKeyHeader: {connection.pool.secretKey}},
+		http.Header{mulch.SecretKeyHeader: {connection.pool.secretKey}},
 	)
 	if err != nil {
 		return fmt.Errorf("tcp tunnel dialer failure: %w", err)
@@ -146,13 +146,13 @@ func (connection *Connection) serveHandler() bool {
 	connection.setStatus <- RUNNING
 	connection.pool.Remove(nil) // This triggers the pool to make a new connection.
 
-	httpRequest := new(mulery.HTTPRequest) // Deserialize request.
+	httpRequest := new(mulch.HTTPRequest) // Deserialize request.
 	if err := json.Unmarshal(jsonRequest, httpRequest); err != nil {
 		connection.error(fmt.Sprintf("Deserializing json tunnel request: %s", err))
 		return false
 	}
 
-	req := mulery.UnserializeHTTPRequest(httpRequest)
+	req := mulch.UnserializeHTTPRequest(httpRequest)
 	handler := connection.customHandler
 
 	if connection.pool.client.Config.Handler == nil {
@@ -198,7 +198,7 @@ func (connection *Connection) defaultHandler(req *http.Request) bool {
 
 func (connection *Connection) writeResponseHeaders(resp *http.Response) io.WriteCloser {
 	// This is where we send the Internet's (http request) response back to the server.
-	err := connection.ws.WriteMessage(websocket.TextMessage, mulery.SerializeHTTPResponse(resp))
+	err := connection.ws.WriteMessage(websocket.TextMessage, mulch.SerializeHTTPResponse(resp))
 	if err != nil {
 		connection.pool.client.Errorf("Writing tunnel response: %v", err)
 		return nil
@@ -219,7 +219,7 @@ func (connection *Connection) writeResponseHeaders(resp *http.Response) io.Write
 func (connection *Connection) error(msg string) bool {
 	connection.pool.client.Errorf(msg)
 
-	resp := mulery.NewHTTPResponse(mulery.ClientErrorCode, int64(len(msg)))
+	resp := mulch.NewHTTPResponse(mulch.ClientErrorCode, int64(len(msg)))
 	// Write response
 	err := connection.ws.WriteMessage(websocket.TextMessage, resp)
 	if err != nil {

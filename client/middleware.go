@@ -7,6 +7,8 @@ import (
 	"sync"
 )
 
+/* This file turns http.ResponseWriter into an http.Response. */
+
 // ErrNilBody probably never happens, but it's better than a panic in case it does.
 var ErrNilBody = fmt.Errorf("got Write before WriteHeaders, body is nil")
 

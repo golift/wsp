@@ -1,12 +1,6 @@
-.PHONY: build server client mulery
+.PHONY: build mulery
 
-build: server client
-
-server:
-	go build -race ./cmd/wsp_server
-
-client:
-	go build -race ./cmd/wsp_client
+build: mulery
 
 mulery:
-	go build ./cmd/mulery
+	go build -o mulery-server ./

@@ -3,7 +3,6 @@ module golift.io/mulery
 go 1.19
 
 require (
-	github.com/gofrs/uuid/v5 v5.0.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/lestrrat-go/apache-logformat/v2 v2.0.6
 	golift.io/cnfgfile v0.0.0-20230531075023-f880041cc0a0

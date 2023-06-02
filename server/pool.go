@@ -10,7 +10,7 @@ import (
 // Pool handles all connections from the peer.
 type Pool struct {
 	done        bool
-	length      int
+	minSize     int
 	idleTimeout time.Duration
 	id          clientID
 	connections []*Connection
@@ -90,15 +90,16 @@ func (pool *Pool) clean() {
 	connections := []*Connection{}
 
 	for _, connection := range pool.connections {
-		// We need to be sure we'll never close a BUSY or soon to be BUSY connection.
+		// Ensure a busy connection is never closed.
 		connection.lock.Lock()
 
 		if connection.status == Idle {
-			if idle++; idle > pool.length {
+			if idle++; idle > pool.minSize {
 				// We have enough idle connections in the pool.
 				// Terminate the connection if it is idle since more that IdleTimeout
 				if time.Since(connection.idleSince) > pool.idleTimeout {
-					log.Println("[DEBUG] Closing idle connection: ", connection.pool.id)
+					log.Printf("Closing idle connection: %s, tunnels: %d, max: %d",
+						pool.id, len(pool.connections), cap(pool.idle))
 					connection.close()
 				}
 			}

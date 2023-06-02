@@ -1,8 +1,10 @@
-package client
+package mulery
 
 import "log"
 
-// Logger is the logs interface for this package.
+const SecretKeyHeader = "x-secret-key"
+
+// Logger is the log-output input interface for this package.
 // Provide your own log interface, or use the DefaultLogger to simply wrap the log package.
 // Leaving the interface nil disables all log output.
 type Logger interface {

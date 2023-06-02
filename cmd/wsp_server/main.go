@@ -13,13 +13,13 @@ import (
 )
 
 func main() {
-	configFile := flag.String("config", "wsp_server.cfg", "config file path")
+	configFile := flag.String("config", "wsp_server.yml", "config file path")
 	flag.Parse()
 
 	// Load configuration
 	config, err := LoadConfiguration(*configFile)
 	if err != nil {
-		log.Fatalf("Unable to load configuration : %s", err)
+		log.Fatalf("Unable to load configuration: %s", err)
 	}
 
 	server := server.NewServer(config)

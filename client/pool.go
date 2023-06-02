@@ -79,7 +79,12 @@ func (pool *Pool) Start(ctx context.Context) {
 			case <-pool.getSize:
 				pool.repSize <- pool.size()
 			case conn := <-pool.delChan:
-				pool.remove(conn)
+				if conn == nil {
+					pool.connector(ctx)
+				} else {
+					pool.remove(conn)
+				}
+
 				pool.repChan <- struct{}{}
 			}
 		}

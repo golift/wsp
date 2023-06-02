@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/websocket"
+	"golift.io/mulery"
 )
 
 const (
@@ -24,7 +25,7 @@ type Config struct {
 	Handler func(http.ResponseWriter, *http.Request)
 	// Logger allows routing logs from this package however you'd like.
 	// If left nil, you will get no logs. Use DefaultLogger to print logs to stdout.
-	Logger
+	mulery.Logger
 }
 
 // Client connects to one or more Server using HTTP websockets.
@@ -42,14 +43,14 @@ func NewConfig() *Config {
 		Targets:      []string{"ws://127.0.0.1:8080/register"},
 		PoolIdleSize: defaultPoolIdleSize,
 		PoolMaxSize:  defaultPoolMaxSize,
-		Logger:       &DefaultLogger{Silent: false},
+		Logger:       &mulery.DefaultLogger{Silent: false},
 	}
 }
 
 // NewClient creates a new Client.
 func NewClient(config *Config) *Client {
 	if config.Logger == nil {
-		config.Logger = &DefaultLogger{Silent: true}
+		config.Logger = &mulery.DefaultLogger{Silent: true}
 	}
 
 	return &Client{

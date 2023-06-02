@@ -17,13 +17,13 @@ import (
 func main() {
 	ctx := context.Background()
 
-	configFile := flag.String("config", "wsp_client.cfg", "config file path")
+	configFile := flag.String("config", "wsp_client.yml", "config file path")
 	flag.Parse()
 
 	// Load configuration
 	config, err := LoadConfiguration(*configFile)
 	if err != nil {
-		log.Fatalf("Unable to load configuration : %s", err)
+		log.Fatalf("Unable to load configuration: %s", err)
 	}
 
 	proxy := client.NewClient(config)

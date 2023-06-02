@@ -1,8 +1,6 @@
 package server
 
 import (
-	"crypto/sha256"
-	"fmt"
 	"log"
 	"time"
 
@@ -28,14 +26,7 @@ type clientID string
 
 // NewPool creates a new Pool, and starts one go routine per pool to keep it clean and running.
 // Each pool represents 1 client, and each client may have many connections.
-// hashSeed is optional and changes how client IDs are generated.
-func NewPool(server *Server, id clientID, max int, hashSeed string) *Pool {
-	if hashSeed != "" {
-		hash := sha256.New()
-		hash.Write([]byte(hashSeed + string(id)))
-		id = clientID(fmt.Sprintf("%x", hash.Sum(nil)))
-	}
-
+func NewPool(server *Server, id clientID, max int) *Pool {
 	pool := &Pool{
 		id:          id,
 		idle:        make(chan *Connection, max),
@@ -81,6 +72,8 @@ func (pool *Pool) keepRunning() {
 
 			if !pool.done {
 				pool.connections = append(pool.connections, conn)
+				log.Printf("Registering new connection from %s, tunnels: %d, max: %d",
+					pool.id, len(pool.connections), cap(pool.idle))
 			}
 		}
 	}
@@ -88,7 +81,6 @@ func (pool *Pool) keepRunning() {
 
 // Register creates a new Connection and adds it to the pool.
 func (pool *Pool) Register(ws *websocket.Conn) {
-	log.Printf("Registering new connection from %s", pool.id)
 	pool.newConn <- NewConnection(pool, ws)
 }
 

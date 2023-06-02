@@ -54,7 +54,7 @@ func (connection *Connection) Connect(ctx context.Context) error {
 	connection.ws, _, err = connection.pool.client.dialer.DialContext(
 		ctx,
 		connection.pool.target,
-		http.Header{"X-SECRET-KEY": {connection.pool.secretKey}},
+		http.Header{mulery.SecretKeyHeader: {connection.pool.secretKey}},
 	)
 	if err != nil {
 		return fmt.Errorf("tcp tunnel dialer failure: %w", err)
@@ -90,7 +90,6 @@ func (connection *Connection) keepAlive() {
 			err := connection.ws.WriteControl(websocket.PingMessage, []byte{}, tick.Add(keepAliveTimeout))
 			if err != nil {
 				connection.pool.client.Errorf("Tunnel keep-alive failure: %v", err)
-
 				return
 			}
 		case status, ok := <-connection.setStatus:
@@ -125,7 +124,7 @@ func (connection *Connection) serve() {
 
 	for {
 		if !connection.serveHandler() {
-			return
+			return // handler had a socket error, close up shop.
 		}
 	}
 }
@@ -145,6 +144,7 @@ func (connection *Connection) serveHandler() bool {
 	}
 
 	connection.setStatus <- RUNNING
+	connection.pool.Remove(nil) // This triggers the pool to make a new connection.
 
 	httpRequest := new(mulery.HTTPRequest) // Deserialize request.
 	if err := json.Unmarshal(jsonRequest, httpRequest); err != nil {
@@ -169,7 +169,7 @@ func (connection *Connection) serveHandler() bool {
 
 	// Create a "fake" body.
 	req.Body = io.NopCloser(bodyReader)
-
+	// Run defaultHandler or customHandler.
 	return handler(req)
 }
 
@@ -197,11 +197,8 @@ func (connection *Connection) defaultHandler(req *http.Request) bool {
 }
 
 func (connection *Connection) writeResponseHeaders(resp *http.Response) io.WriteCloser {
-	// Turn the entire http response into a JSON response the server can parse.
-	jsonResponse, _ := json.Marshal(mulery.SerializeHTTPResponse(resp)) //nolint:errchkjson // it wont error.
-
 	// This is where we send the Internet's (http request) response back to the server.
-	err := connection.ws.WriteMessage(websocket.TextMessage, jsonResponse)
+	err := connection.ws.WriteMessage(websocket.TextMessage, mulery.SerializeHTTPResponse(resp))
 	if err != nil {
 		connection.pool.client.Errorf("Writing tunnel response: %v", err)
 		return nil
@@ -211,31 +208,20 @@ func (connection *Connection) writeResponseHeaders(resp *http.Response) io.Write
 	bodyWriter, err := connection.ws.NextWriter(websocket.BinaryMessage)
 	if err != nil {
 		connection.pool.client.Errorf("Getting tunnel response body writer: %v", err)
-		return nil
 	}
 
-	return bodyWriter
+	return bodyWriter // may be nil.
 }
 
-// All calls to this method are in the methods above.
-// Returns true if there's an error.
+// error is called when an unrecoverable non-socket error happens in the request.
+// The two calls to this method are in the methods above.
+// Returns true if there's an error writing to the socket.
 func (connection *Connection) error(msg string) bool {
-	resp := mulery.NewHTTPResponse()
-	resp.StatusCode = mulery.ClientErrorCode
-
 	connection.pool.client.Errorf(msg)
 
-	resp.ContentLength = int64(len(msg))
-
-	// Serialize response
-	jsonResponse, err := json.Marshal(resp)
-	if err != nil {
-		connection.pool.client.Errorf("Serializing tunnel response: %v", err)
-		return true
-	}
-
+	resp := mulery.NewHTTPResponse(mulery.ClientErrorCode, int64(len(msg)))
 	// Write response
-	err = connection.ws.WriteMessage(websocket.TextMessage, jsonResponse)
+	err := connection.ws.WriteMessage(websocket.TextMessage, resp)
 	if err != nil {
 		connection.pool.client.Errorf("Writing tunnel response: %v", err)
 		return true

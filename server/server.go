@@ -2,24 +2,27 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
+	apachelog "github.com/lestrrat-go/apache-logformat/v2"
 	"golift.io/mulery"
 )
 
 var (
 	ErrInvalidKey    = fmt.Errorf("invalid secret key provided")
+	ErrNoClientID    = fmt.Errorf("required client id header is missing")
 	ErrNoProxyTarget = fmt.Errorf("no proxy target found for request")
-	ErrNoDestination = fmt.Errorf("x-proxy-destination header invalid")
 	ErrInvalidData   = fmt.Errorf("invalid data received")
 )
 
@@ -37,6 +40,7 @@ type Server struct {
 	// and "dispatcher" thread reads this channel.
 	dispatcher chan *ConnectionRequest
 	server     *http.Server
+	allow      AllowedIPs
 }
 
 type newPool struct {
@@ -68,16 +72,20 @@ func NewServer(config *Config) *Server {
 
 // Start HTTP server.
 func (s *Server) Start() {
+	s.allow = MakeIPs(s.Config.Upstreams)
 	smx := http.NewServeMux()
+	remWs, _ := apachelog.New(`%h %{X-User-ID}i - %t "%r" %>s %b "%{X-Client-ID}i" "%{User-agent}i" - %{ms}Tms`)
 	// XXX: I want to detach the handler function from the Server struct,
 	// but it is tightly coupled to the internal state of the Server.
 	// Lessons learned:
 	// - The handlers need to live in the main app because they interface with everything in the app.
 	// - As you attempt to decouple the handlers, you wind up moving most of the code. Trust me.
 	// - Handlers that do things in other packages can be in other packages.
-	smx.HandleFunc("/register", s.handleRegister)
-	smx.HandleFunc("/request", s.handleRequest)
-	smx.HandleFunc("/status", s.handleStatus)
+	smx.HandleFunc("/register", s.handleRegister) // apache log cannot do web sockets.
+	smx.Handle("/request/", remWs.Wrap(http.StripPrefix("/request",
+		s.validateUpstream(http.HandlerFunc(s.handleRequest))), os.Stdout))
+	smx.Handle("/status", remWs.Wrap(s.validateUpstream(http.HandlerFunc(s.handleStatus)), os.Stdout))
+	smx.Handle("/", remWs.Wrap(http.HandlerFunc(s.handleAll), os.Stdout))
 
 	// Dispatch connection from available pools to client requests
 	// in a separate thread from the server thread.
@@ -90,7 +98,14 @@ func (s *Server) Start() {
 	}
 
 	go func() { // gofunc:2
-		err := s.server.ListenAndServe()
+		var err error
+
+		if s.Config.SSLCrtPath != "" && s.Config.SSLKeyPath != "" {
+			err = s.server.ListenAndServeTLS(s.Config.SSLCrtPath, s.Config.SSLKeyPath)
+		} else {
+			err = s.server.ListenAndServe()
+		}
+
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalln("Web server failed, exiting:", err)
 		}
@@ -126,8 +141,8 @@ func (s *Server) clean() {
 	}
 
 	s.pools = pools
-	log.Printf("%d pools, %d connections, %d idle, %d busy, %d closed, %d newPool",
-		len(s.pools), conns, idle, busy, closed, len(s.newPool))
+	log.Printf("%d pools, %d connections, %d idle, %d busy, %d closed",
+		len(s.pools), conns, idle, busy, closed)
 }
 
 // Dispatch connection from available pools to client requests.
@@ -232,31 +247,31 @@ func (s *Server) getRequestConnection(request *ConnectionRequest) (*Connection, 
 
 // handleRequest receives http requests for /request paths.
 func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
-	// [1]: Receive requests to be proxied; parse destination URL.
-	dstURL := r.Header.Get("X-PROXY-DESTINATION")
-	if dstURL == "" {
-		mulery.ProxyError(w, fmt.Errorf("%w: not provided", ErrNoDestination))
-		return
+	// [1]: Receive requests to be proxied; parse destination URL if it exists (otherwise use the incoming url).
+	if dstURL := r.Header.Get("X-PROXY-DESTINATION"); dstURL != "" {
+		var err error
+		// r.URL is used in proxyRequest().
+		if r.URL, err = url.Parse(dstURL); err != nil {
+			mulery.ProxyError(w, fmt.Errorf("parsing X-PROXY-DESTINATION header: %w", err))
+			return
+		}
 	}
-
-	URL, err := url.Parse(dstURL)
-	if err != nil {
-		mulery.ProxyError(w, fmt.Errorf("parsing X-PROXY-DESTINATION header: %w", err))
-		return
-	}
-
-	r.URL = URL // used in proxyRequest().
-	log.Printf("[%s] %s", r.Method, r.URL.String())
 
 	if len(s.pools) == 0 {
 		mulery.ProxyError(w, fmt.Errorf("%w: no pools registered", ErrNoProxyTarget))
 		return
 	}
 
-	// [2]: Take an WebSocket connection available from pools for relaying received requests.
+	clientID, err := s.getClientID(r)
+	if err != nil {
+		mulery.ProxyError(w, err)
+		return
+	}
+
+	// [2]: Take a WebSocket connection from pools for relaying received requests.
 	request := &ConnectionRequest{
 		connection: make(chan *Connection),
-		target:     clientID(r.Header.Get("X-PROXY-TARGET")),
+		target:     clientID,
 	}
 	// "Dispatcher" is running in a separate thread from the server by `go s.dispatchConnections()`.
 	// It waits to receive requests to dispatch connection from available pools to clients requests.
@@ -286,11 +301,24 @@ func (s *Server) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) getClientID(req *http.Request) (clientID, error) {
+	target := clientID("")
+
+	if s.Config.IDHeader != "" {
+		target = clientID(req.Header.Get(s.Config.IDHeader))
+		if target == "" {
+			return "", fmt.Errorf("%w: %s", ErrNoClientID, s.Config.IDHeader)
+		}
+	}
+
+	return target, nil // target may be empty.
+}
+
 // handleRegister receives http requests for /register paths.
 // Receives the WebSocket upgrade handshake request from wsp_client.
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	// 0. Validate the provided secret key.
-	secret, err := s.validateKey(r.Header)
+	secret, err := s.validateKey(r.Context(), r.Header)
 	if err != nil {
 		mulery.ProxyError(w, err)
 		return
@@ -318,10 +346,10 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 }
 
 // 0. Validate the provided secret key.
-func (s *Server) validateKey(header http.Header) (string, error) {
+func (s *Server) validateKey(ctx context.Context, header http.Header) (string, error) {
 	// If a custom key validator is provided, run that.
 	if s.Config.KeyValidator != nil {
-		secret, err := s.Config.KeyValidator(header)
+		secret, err := s.Config.KeyValidator(ctx, header)
 		if err != nil {
 			return "", fmt.Errorf("custom key validation failed: %w", err)
 		}
@@ -330,7 +358,7 @@ func (s *Server) validateKey(header http.Header) (string, error) {
 	}
 
 	// Otherwise run the default validator.
-	secretKey := header.Get("X-SECRET-KEY")
+	secretKey := header.Get(mulery.SecretKeyHeader)
 	if secretKey != s.Config.SecretKey {
 		return "", ErrInvalidKey
 	}
@@ -346,7 +374,7 @@ func parseGreeting(sock *websocket.Conn) (clientID, int, int, error) {
 		return "", 0, 0, fmt.Errorf("unable to read greeting message: %w", err)
 	}
 
-	// Parse the greeting message
+	// Parse the greeting message.
 	split := strings.Split(string(greeting), "_")
 	if len(split) != 3 { //nolint:gomnd
 		return "", 0, 0, fmt.Errorf("%w: greeting separator count is wrong", ErrInvalidData)
@@ -369,8 +397,17 @@ func parseGreeting(sock *websocket.Conn) (clientID, int, int, error) {
 
 // 3. Register the connection into server pools.
 func (s *Server) registerPool(newPool *newPool) {
+	if newPool.secret != "" {
+		hash := sha256.New()
+		hash.Write([]byte(newPool.secret + string(newPool.clientID)))
+		// As promised, if a custom key validator returns a secret(string),
+		// hash that with the client id to create a new client id.
+		// This is custom logic you probably don't want, so don't return a string from your key validator.
+		newPool.clientID = clientID(fmt.Sprintf("%x", hash.Sum(nil)))
+	}
+
 	if pool, ok := s.pools[newPool.clientID]; !ok || pool == nil {
-		s.pools[newPool.clientID] = NewPool(s, newPool.clientID, newPool.max, newPool.secret)
+		s.pools[newPool.clientID] = NewPool(s, newPool.clientID, newPool.max)
 	}
 
 	// update pool size
@@ -382,6 +419,10 @@ func (s *Server) registerPool(newPool *newPool) {
 
 func (s *Server) handleStatus(resp http.ResponseWriter, _ *http.Request) {
 	http.Error(resp, "ok", http.StatusOK)
+}
+
+func (s *Server) handleAll(resp http.ResponseWriter, _ *http.Request) {
+	http.Error(resp, "Unauthorized", http.StatusUnauthorized)
 }
 
 // Shutdown stop the Server.

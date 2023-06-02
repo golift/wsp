@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,8 +19,8 @@ import (
 type ConnectionStatus int
 
 const (
-	// Idle state means it is opened but not working now.
-	// The default value for Connection is Idle, so it is ok to use zero-value(int: 0) for Idle status.
+	// Idle state means it is opened but not doing work now.
+	// The default value for Connection is Idle.
 	Idle ConnectionStatus = iota
 	Busy
 	Closed
@@ -144,8 +145,6 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 		}
 	}()
 
-	log.Printf("proxy request to %s", connection.pool.id)
-
 	// [1]: Serialize HTTP request
 	jsonReq, err := json.Marshal(mulery.SerializeHTTPRequest(r))
 	if err != nil {
@@ -174,7 +173,9 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 
 	// [3]: Wait the HTTP response is ready
 	responseChannel := make(chan (io.Reader))
-	connection.nextResponse <- responseChannel
+	if err := connection.getNextResponse(r.Context(), responseChannel); err != nil {
+		return err
+	}
 
 	responseReader, ok := <-responseChannel
 	if responseReader == nil {
@@ -217,7 +218,9 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 	// Get the HTTP Response body from the peer.
 	// To do so send a new channel to the read() goroutine to get the next message reader.
 	responseBodyChannel := make(chan (io.Reader))
-	connection.nextResponse <- responseBodyChannel
+	if err := connection.getNextResponse(r.Context(), responseBodyChannel); err != nil {
+		return err
+	}
 
 	responseBodyReader, ok := <-responseBodyChannel
 	if responseBodyReader == nil {
@@ -242,6 +245,18 @@ func (connection *Connection) proxyRequest(w http.ResponseWriter, r *http.Reques
 	connection.Release()
 
 	return nil
+}
+
+// getNextResponse waits for another upstream response, or for the client to give up.
+func (connection *Connection) getNextResponse(ctx context.Context, ioCh chan io.Reader) error {
+	for {
+		select {
+		case connection.nextResponse <- ioCh:
+			return nil
+		case <-ctx.Done():
+			return fmt.Errorf("http client gave up waiting for remote: %w", ctx.Err())
+		}
+	}
 }
 
 // Take notifies that this connection is going to be used.

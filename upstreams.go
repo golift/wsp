@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// AllowedIPs determines who make requests.
+// AllowedIPs determines who make can requests.
 type AllowedIPs struct {
 	Input []string
 	Nets  []*net.IPNet

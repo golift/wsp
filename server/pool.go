@@ -8,6 +8,7 @@ import (
 )
 
 // Pool handles all connections from the peer.
+// Each pool is unique by it's clientID.
 type Pool struct {
 	done        bool
 	minSize     int
@@ -62,7 +63,7 @@ func (pool *Pool) keepRunning() {
 		select {
 		case <-pool.askClean:
 			pool.clean()
-			pool.getSize <- &PoolSize{Total: len(pool.connections)}
+			pool.getSize <- &PoolSize{Total: len(pool.connections)} // shoehorn.
 		case <-pool.askSize:
 			pool.getSize <- pool.size()
 		case conn, ok := <-pool.newConn:
@@ -86,36 +87,38 @@ func (pool *Pool) Register(ws *websocket.Conn) {
 
 // clean removes dead and idle connections from the pool.
 func (pool *Pool) clean() {
-	idle := 0
-	connections := []*Connection{}
+	var (
+		idle = 0
+		save = []*Connection{}
+		keep bool
+	)
 
 	for _, connection := range pool.connections {
-		// Ensure a busy connection is never closed.
-		connection.lock.Lock()
-
-		if connection.status == Idle {
-			if idle++; idle > pool.minSize {
-				// We have enough idle connections in the pool.
-				// Terminate the connection if it is idle since more that IdleTimeout
-				if time.Since(connection.idleSince) > pool.idleTimeout {
-					log.Printf("Closing idle connection: %s, tunnels: %d, max: %d",
-						pool.id, len(pool.connections), cap(pool.idle))
-					connection.close()
-				}
-			}
+		if idle, keep = pool.cleanConnection(connection, idle); keep {
+			save = append(save, connection)
 		}
-
-		if connection.status == Closed {
-			connection.lock.Unlock()
-			continue
-		}
-
-		connection.lock.Unlock()
-
-		connections = append(connections, connection)
 	}
 
-	pool.connections = connections
+	pool.connections = save
+}
+
+func (pool *Pool) cleanConnection(connection *Connection, idle int) (int, bool) {
+	// Ensure a busy connection is never closed.
+	connection.lock.Lock()
+	defer connection.lock.Unlock()
+
+	if connection.status == Idle {
+		idle++
+		if idle > pool.minSize && time.Since(connection.idleSince) > pool.idleTimeout {
+			// We have enough idle connections in the pool.
+			// Terminate the connection if it is idle since more that IdleTimeout
+			log.Printf("Closing idle connection: %s, tunnels: %d, max: %d",
+				pool.id, len(pool.connections), cap(pool.idle))
+			connection.close()
+		}
+	}
+
+	return idle, connection.status != Closed
 }
 
 // IsEmpty cleans the pool and return true if the pool is empty.

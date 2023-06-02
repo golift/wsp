@@ -3,4 +3,4 @@
 build: mulery
 
 mulery:
-	go build -o mulery-server ./
+	go build -o mulery ./cmd/mulery

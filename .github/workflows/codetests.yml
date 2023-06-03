@@ -1,0 +1,48 @@
+name: test-and-lint
+on: push
+permissions:
+  contents: read
+jobs:
+  gotest:
+    # description: "Runs `go test` against 3 operating systems."
+    strategy:
+      matrix:
+        os: [ubuntu, macos, windows]
+    runs-on: ${{ matrix.os }}-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.20'
+      - name: go-generate
+        run: go generate ./...
+      - name: go-test
+        run: |
+          go test ./pkg/...
+
+  codespell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: codespell-project/actions-codespell@v1
+        with:
+          check_hidden: true
+          skip: .git,go.sum,go.mod
+
+  golangci:
+    strategy:
+      matrix:
+        os: [linux, windows]
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    env:
+      GOOS: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.20'
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: 'v1.52'

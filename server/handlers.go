@@ -13,25 +13,25 @@ import (
 )
 
 // HandleRequest receives http requests for /request paths.
-func (s *Server) HandleRequest(w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleRequest(resp http.ResponseWriter, req *http.Request) {
 	// Receive requests to be proxied; parse destination URL if it exists (otherwise use the incoming url).
-	if dstURL := r.Header.Get("X-PROXY-DESTINATION"); dstURL != "" {
+	if dstURL := req.Header.Get("X-PROXY-DESTINATION"); dstURL != "" {
 		var err error
 		// r.URL is used in proxyRequest().
-		if r.URL, err = url.Parse(dstURL); err != nil {
-			mulch.ProxyError(w, fmt.Errorf("parsing X-PROXY-DESTINATION header: %w", err))
+		if req.URL, err = url.Parse(dstURL); err != nil {
+			mulch.ProxyError(resp, fmt.Errorf("parsing X-PROXY-DESTINATION header: %w", err))
 			return
 		}
 	}
 
 	if len(s.pools) == 0 {
-		mulch.ProxyError(w, fmt.Errorf("%w: no pools registered", ErrNoProxyTarget))
+		mulch.ProxyError(resp, fmt.Errorf("%w: no pools registered", ErrNoProxyTarget))
 		return
 	}
 
-	clientID, err := s.getClientID(r)
+	clientID, err := s.getClientID(req)
 	if err != nil {
-		mulch.ProxyError(w, err)
+		mulch.ProxyError(resp, err)
 		return
 	}
 
@@ -51,34 +51,34 @@ func (s *Server) HandleRequest(w http.ResponseWriter, r *http.Request) {
 	connection := <-request.connection
 	if connection == nil {
 		// Dispatcher is `nil` which means the target has no pool.
-		mulch.ProxyError(w, fmt.Errorf("%w: %s", ErrNoProxyTarget, request.client))
+		mulch.ProxyError(resp, fmt.Errorf("%w: %s", ErrNoProxyTarget, request.client))
 		return
 	}
 
 	// Send the incoming http request to the peer through the WebSocket connection.
-	if err := connection.proxyRequest(w, r); err != nil {
+	if err := connection.proxyRequest(resp, req); err != nil {
 		// An error occurred throw the connection away.
 		connection.Close()
 		// Try to return an error to the client.
 		// This might fail if response headers have already been sent.
-		mulch.ProxyError(w, fmt.Errorf("tunneling failure, connection closed: %w", err))
+		mulch.ProxyError(resp, fmt.Errorf("tunneling failure, connection closed: %w", err))
 	}
 }
 
 // HandleRegister receives http requests for /register paths.
 // Receives the WebSocket upgrade handshake request from wsp_client.
-func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request) {
+func (s *Server) HandleRegister(resp http.ResponseWriter, req *http.Request) {
 	// 0. Validate the provided secret key.
-	secret, err := s.validateKey(r.Context(), r.Header)
+	secret, err := s.validateKey(req.Context(), req.Header)
 	if err != nil {
-		mulch.ProxyError(w, err)
+		mulch.ProxyError(resp, err)
 		return
 	}
 
 	// 1. Upgrade a received HTTP request to a WebSocket connection.
-	sock, err := s.upgrader.Upgrade(w, r, nil)
+	sock, err := s.upgrader.Upgrade(resp, req, nil)
 	if err != nil {
-		mulch.ProxyError(w, fmt.Errorf("http upgrade failed: %w", err))
+		mulch.ProxyError(resp, fmt.Errorf("http upgrade failed: %w", err))
 		return
 	}
 
@@ -86,7 +86,7 @@ func (s *Server) HandleRegister(w http.ResponseWriter, r *http.Request) {
 	// The first message should contain the remote Proxy name and pool size.
 	poolConfig, err := parseGreeting(sock)
 	if err != nil {
-		mulch.ProxyError(w, err)
+		mulch.ProxyError(resp, err)
 		sock.Close()
 
 		return

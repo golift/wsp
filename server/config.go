@@ -15,7 +15,7 @@ type Config struct {
 	SecretKey   string        `json:"secretKey" toml:"secret_key" yaml:"secretKey" xml:"secret_key"`
 	// IDHeader sets the upstream header to parse for a remote client.
 	// Default behavior is to send requests to clients randomly.
-	// If this value is set, requests can only be directed to clients by provding the client ID in this header.
+	// If this value is set, requests can only be directed to clients by providing the client ID in this header.
 	IDHeader string `json:"idHeader" toml:"id_header" yaml:"idHeader" xml:"id_header"`
 	// If a KeyValidator method is provided, then Secretkey is ignored.
 	// If the validator returns a string then all pool IDs become a

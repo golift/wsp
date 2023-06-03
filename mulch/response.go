@@ -21,7 +21,7 @@ const (
 
 // SerializeHTTPResponse create a new HTTPResponse json blob from a http.Response.
 func SerializeHTTPResponse(resp *http.Response) []byte {
-	jsonResponse, _ := json.Marshal(&HTTPResponse{ //nolint:errchkjson // it wont error.
+	jsonResponse, _ := json.Marshal(&HTTPResponse{ //nolint:errchkjson // it won't error.
 		StatusCode:    resp.StatusCode,
 		Header:        resp.Header,
 		ContentLength: resp.ContentLength,
@@ -32,7 +32,7 @@ func SerializeHTTPResponse(resp *http.Response) []byte {
 
 // NewHTTPResponse creates a new HTTPResponse.
 func NewHTTPResponse(code int, size int64) []byte {
-	jsonResponse, _ := json.Marshal(&HTTPResponse{ //nolint:errchkjson // it wont error.
+	jsonResponse, _ := json.Marshal(&HTTPResponse{ //nolint:errchkjson // it won't error.
 		Header:        make(http.Header),
 		StatusCode:    code,
 		ContentLength: size,

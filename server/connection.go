@@ -17,7 +17,7 @@ const (
 	// Idle state means it is opened but not doing work now.
 	// The default value for Connection is Idle.
 	Idle   ConnectionStatus = iota
-	Busy                    // Unavailble for use.
+	Busy                    // Unavailable for use.
 	Closed                  // Never use again.
 )
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"log"
 	"reflect"
 	"time"
 )
@@ -65,7 +64,7 @@ func (s *Server) cleanPools() {
 
 	for target, pool := range s.pools {
 		if pool.IsEmpty() {
-			log.Printf("Removing empty connection pool: %s", pool.id)
+			s.Config.Logger.Debugf("Removing empty connection pool: %s", pool.id)
 			pool.Shutdown()
 			delete(s.pools, target)
 			closed++
@@ -79,7 +78,7 @@ func (s *Server) cleanPools() {
 	}
 
 	s.pools = pools
-	log.Printf("%d pools, %d connections, %d idle, %d busy, %d closed",
+	s.Config.Logger.Debugf("%d pools, %d connections, %d idle, %d busy, %d closed",
 		len(s.pools), conns, idle, busy, closed)
 }
 

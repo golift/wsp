@@ -7,16 +7,16 @@ import (
 	"strings"
 )
 
-func (c *Config) handleAll(resp http.ResponseWriter, _ *http.Request) {
+func (c *Config) HandleAll(resp http.ResponseWriter, _ *http.Request) {
 	http.Error(resp, "", http.StatusUnauthorized)
 }
 
-func (c *Config) validateUpstream(next http.Handler) http.Handler {
+func (c *Config) ValidateUpstream(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 		if c.allow.Contains(req.RemoteAddr) {
 			next.ServeHTTP(resp, req)
 		} else {
-			c.handleAll(resp, req)
+			c.HandleAll(resp, req)
 		}
 	})
 }

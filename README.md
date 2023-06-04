@@ -21,8 +21,6 @@ How
 Websockets and some reverse-proxy engineering.
 
 TODO:
-- Write log files and rotate them.
-- Add startup log output for configuration.
 - Prometheus metrics:
 pools (clients), connections, request/code counters, response times, break down api paths into tags, register requests, register failures
 

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"golift.io/mulery/mulch"
 )
 
 // Config configures a Server.
@@ -24,6 +25,9 @@ type Config struct {
 	// This allows you to let clients provide their own ID, but a secure
 	// access-ID is created with your provided seed to prevent hash collisions.
 	KeyValidator func(context.Context, http.Header) (string, error) `json:"-" toml:"-" yaml:"-" xml:"-"`
+	// Logger allows routing logs from this package to somewhere special.
+	// If left nil logs are written to stdout.
+	Logger mulch.Logger `json:"-" toml:"-" yaml:"-" xml:"-"`
 }
 
 // Server is a Reverse HTTP Proxy over WebSocket.
@@ -62,12 +66,17 @@ func NewConfig() *Config {
 	return &Config{
 		Timeout:     time.Second,
 		IdleTimeout: time.Minute + time.Second,
+		Logger:      &mulch.DefaultLogger{},
 	}
 }
 
 // NewServer return a new Server instance.
 func NewServer(config *Config) *Server {
 	const defaultPoolBuffer = 100
+
+	if config.Logger == nil {
+		config.Logger = &mulch.DefaultLogger{}
+	}
 
 	return &Server{
 		Config:     config,

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"runtime/debug"
 
@@ -15,20 +14,20 @@ import (
 
 /* All of this code is related. One entry point into this file. */
 
-func catchProxyPanic() {
+func (c *Connection) catchProxyPanic() {
 	if r := recover(); r != nil {
 		// https://github.com/golang/go/blob/b100e127ca0e398fbb58d04d04e2443b50b3063e/src/runtime/chan.go#LL206C15-L206C15
 		if err, _ := r.(error); err != nil && err.Error() != "send on closed channel" { // ignore this specific panic.
-			log.Printf("panic error: %v\n%s", err, string(debug.Stack()))
+			c.pool.Errorf("panic error: %v\n%s", err, string(debug.Stack()))
 		} else if err == nil {
-			log.Printf("panic: %v\n%s", r, string(debug.Stack()))
+			c.pool.Errorf("panic: %v\n%s", r, string(debug.Stack()))
 		}
 	}
 }
 
 // getNextResponse waits for another upstream response, or for the client to give up.
 func (c *Connection) getNextResponse(ctx context.Context, ioCh chan io.Reader) error {
-	defer catchProxyPanic()
+	defer c.catchProxyPanic()
 
 	for {
 		select {
@@ -72,7 +71,7 @@ func (c *Connection) proxyRequest(resp http.ResponseWriter, req *http.Request) e
 
 // sendProxyRequestBody is step 1.
 func (c *Connection) sendProxyRequestBody(req *http.Request) error {
-	defer catchProxyPanic()
+	defer c.catchProxyPanic()
 
 	jsonReq, err := json.Marshal(mulch.SerializeHTTPRequest(req))
 	if err != nil {
@@ -103,7 +102,7 @@ func (c *Connection) sendProxyRequestBody(req *http.Request) error {
 
 // getProxyResponse is step 2.
 func (c *Connection) getProxyResponse(req *http.Request) ([]byte, error) {
-	defer catchProxyPanic()
+	defer c.catchProxyPanic()
 
 	responseChannel := make(chan (io.Reader))
 	// Notify the read() goroutine that we are done reading the response.
@@ -149,7 +148,7 @@ func (c *Connection) sendResponseToClient(resp http.ResponseWriter, jsonResponse
 
 // copyProxyResponseBody is step 4.
 func (c *Connection) copyProxyResponseBody(resp http.ResponseWriter, req *http.Request) error {
-	defer catchProxyPanic()
+	defer c.catchProxyPanic()
 
 	// Get the HTTP Response body from the peer.
 	// Send a new channel to the read() goroutine to get the next message reader.

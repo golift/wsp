@@ -11,7 +11,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 
 	"github.com/caddyserver/certmagic"
 	apachelog "github.com/lestrrat-go/apache-logformat/v2"
@@ -36,11 +35,24 @@ type Config struct {
 	Email string `json:"email" toml:"email" yaml:"email" xml:"email"`
 	// DNS Names that we are allowed to create SSL certificates for.
 	SSLNames StringSlice `json:"sslNames" toml:"ssl_names" yaml:"sslNames" xml:"ssl_names"`
+	// Path to app log file.
+	LogFile string `json:"logFile" toml:"log_file" yaml:"logFile" xml:"log_file"`
+	// Number of log files to keep when rotating.
+	LogFiles int `json:"logFiles" toml:"log_files" yaml:"logFiles" xml:"log_files"`
+	// Rotate the log file when it reaches this many megabytes.
+	LogFileMB int64 `json:"logFileMb" toml:"log_file_mb" yaml:"logFileMb" xml:"log_file_mb"`
+	// Path for http log.
+	HTTPLog string `json:"httpLog" toml:"http_log" yaml:"httpLog" xml:"http_log"`
+	// Number of http log files to keep when rotating.
+	HTTPLogs int `json:"httpLogs" toml:"http_logs" yaml:"httpLogs" xml:"http_logs"`
+	// Rotate the http log file when it reaches this many megabytes.
+	HTTPLogMB int64 `json:"httpLogMb" toml:"http_log_mb" yaml:"httpLogMb" xml:"http_log_mb"`
 	*server.Config
 	dispatch *server.Server
 	client   *http.Client
 	server   *http.Server
 	allow    AllowedIPs
+	log      *log.Logger
 }
 
 type StringSlice []string
@@ -66,6 +78,7 @@ func LoadConfigFile(path string) (*Config, error) {
 		client: &http.Client{},
 	}
 	config.Config.KeyValidator = config.KeyValidator
+	config.Config.Logger = config
 
 	if err := cnfgfile.Unmarshal(config, path); err != nil {
 		return nil, fmt.Errorf("failed to parse configuration: %w", err)
@@ -76,6 +89,7 @@ func LoadConfigFile(path string) (*Config, error) {
 
 // Start HTTP server.
 func (c *Config) Start() {
+	httpLog := c.setupLogs()
 	c.dispatch = server.NewServer(c.Config)
 	c.allow = MakeIPs(c.Upstreams)
 	smx := http.NewServeMux()
@@ -83,8 +97,8 @@ func (c *Config) Start() {
 
 	smx.Handle("/register", http.HandlerFunc(c.dispatch.HandleRegister)) // apache log can't do websockets.
 	smx.Handle("/request/", apache.Wrap(http.StripPrefix("/request",
-		c.validateUpstream(http.HandlerFunc(c.dispatch.HandleRequest))), os.Stdout))
-	smx.Handle("/", apache.Wrap(http.HandlerFunc(c.handleAll), os.Stdout))
+		c.ValidateUpstream(http.HandlerFunc(c.dispatch.HandleRequest))), httpLog.Writer()))
+	smx.Handle("/", apache.Wrap(http.HandlerFunc(c.HandleAll), httpLog.Writer()))
 
 	var tlsConfig *tls.Config
 
@@ -102,11 +116,14 @@ func (c *Config) Start() {
 	}
 
 	c.server = &http.Server{
+		ErrorLog:    c.log,
 		Addr:        c.ListenAddr,
 		Handler:     smx,
 		ReadTimeout: c.Config.Timeout,
 		TLSConfig:   tlsConfig,
 	}
+
+	c.PrintConfig()
 
 	// Dispatch connection from available pools to client requests.
 	go c.dispatch.StartDispatcher()

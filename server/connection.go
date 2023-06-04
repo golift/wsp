@@ -2,7 +2,6 @@ package server
 
 import (
 	"io"
-	"log"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -68,7 +67,7 @@ func NewConnection(pool *Pool, ws *websocket.Conn) *Connection {
 func (c *Connection) read() {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("Websocket crash recovered: %s\n%s", r, string(debug.Stack()))
+			c.pool.Errorf("Websocket crash recovered: %s\n%s", r, string(debug.Stack()))
 		}
 
 		c.Close()
@@ -172,7 +171,7 @@ func (c *Connection) close() {
 		return
 	}
 
-	log.Printf("Closing connection from %s", c.pool.id)
+	c.pool.Debugf("Closing connection from %s", c.pool.id)
 	// Unlock a possible wild read() message.
 	close(c.nextResponse)
 	// Close the underlying TCP connection.

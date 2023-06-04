@@ -8,6 +8,7 @@ require (
 	github.com/lestrrat-go/apache-logformat/v2 v2.0.6
 	github.com/libdns/cloudflare v0.1.0
 	golift.io/cnfgfile v0.0.0-20230531075023-f880041cc0a0
+	golift.io/rotatorr v0.0.0-20230520191821-3b26224a1624
 )
 
 require (

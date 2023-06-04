@@ -1,10 +1,10 @@
 package server
 
 import (
-	"log"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"golift.io/mulery/mulch"
 )
 
 // Pool handles all connections from the peer.
@@ -20,6 +20,7 @@ type Pool struct {
 	askClean    chan struct{}
 	askSize     chan struct{}
 	getSize     chan *PoolSize
+	mulch.Logger
 }
 
 // clientID represents the identifier of the connected WebSocket client.
@@ -36,6 +37,7 @@ func NewPool(server *Server, id clientID, max int) *Pool {
 		askClean:    make(chan struct{}),
 		askSize:     make(chan struct{}),
 		getSize:     make(chan *PoolSize),
+		Logger:      server.Config.Logger,
 	}
 
 	go pool.keepRunning() // gofunc:3 (N)
@@ -73,7 +75,7 @@ func (pool *Pool) keepRunning() {
 
 			if !pool.done {
 				pool.connections = append(pool.connections, conn)
-				log.Printf("Registering new connection from %s, tunnels: %d, max: %d",
+				pool.Printf("Registering new connection from %s, tunnels: %d, max: %d",
 					pool.id, len(pool.connections), cap(pool.idle))
 			}
 		}
@@ -112,7 +114,7 @@ func (pool *Pool) cleanConnection(connection *Connection, idle int) (int, bool) 
 		if idle > pool.minSize && time.Since(connection.idleSince) > pool.idleTimeout {
 			// We have enough idle connections in the pool.
 			// Terminate the connection if it is idle since more that IdleTimeout
-			log.Printf("Closing idle connection: %s, tunnels: %d, max: %d",
+			pool.Printf("Closing idle connection: %s, tunnels: %d, max: %d",
 				pool.id, len(pool.connections), cap(pool.idle))
 			connection.close()
 		}

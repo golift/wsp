@@ -22,5 +22,5 @@ COPY --from=builder /etc/ssl /etc/ssl
 COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
 
 ENV TZ=UTC
-
+EXPOSE 5555
 ENTRYPOINT [ "/mulery" ]

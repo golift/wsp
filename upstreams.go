@@ -3,8 +3,23 @@ package mulery
 import (
 	"fmt"
 	"net"
+	"net/http"
 	"strings"
 )
+
+func (c *Config) handleAll(resp http.ResponseWriter, _ *http.Request) {
+	http.Error(resp, "", http.StatusUnauthorized)
+}
+
+func (c *Config) validateUpstream(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+		if c.allow.Contains(req.RemoteAddr) {
+			next.ServeHTTP(resp, req)
+		} else {
+			c.handleAll(resp, req)
+		}
+	})
+}
 
 // AllowedIPs determines who make can requests.
 type AllowedIPs struct {

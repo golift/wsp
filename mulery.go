@@ -5,6 +5,7 @@ package mulery
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -12,7 +13,9 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/caddyserver/certmagic"
 	apachelog "github.com/lestrrat-go/apache-logformat/v2"
+	"github.com/libdns/cloudflare"
 	"golift.io/cnfgfile"
 	"golift.io/mulery/mulch"
 	"golift.io/mulery/server"
@@ -24,14 +27,32 @@ type Config struct {
 	AuthURL    string `json:"authUrl" toml:"auth_url" yaml:"authUrl" xml:"auth_url"`
 	AuthHeader string `json:"authHeader" toml:"auth_header" yaml:"authHeader" xml:"auth_header"`
 	// List of IPs or CIDRs that are allowed to make requests to clients.
-	Upstreams  []string `json:"upstreams" toml:"upstreams" yaml:"upstreams" xml:"upstreams"`
-	SSLCrtPath string   `json:"sslCrtPath" toml:"ssl_crt_path" yaml:"sslCrtPath" xml:"ssl_crt_path"`
-	SSLKeyPath string   `json:"sslKeyPath" toml:"ssl_key_path" yaml:"sslKeyPath" xml:"ssl_key_path"`
+	Upstreams []string `json:"upstreams" toml:"upstreams" yaml:"upstreams" xml:"upstreams"`
+	// Optional directory where SSL certificates are stored.
+	CacheDir string `json:"cacheDir" toml:"cache_dir" yaml:"cacheDir" xml:"cache_dir"`
+	// CFToken is used to create DNS entries to validate SSL certs for acme.
+	CFToken string `json:"cfToken" toml:"cf_token"  yaml:"cfToken" xml:"cf_token"`
+	// Email is used for acme certificate registration.
+	Email string `json:"email" toml:"email" yaml:"email" xml:"email"`
+	// DNS Names that we are allowed to create SSL certificates for.
+	SSLNames StringSlice `json:"sslNames" toml:"ssl_names" yaml:"sslNames" xml:"ssl_names"`
 	*server.Config
 	dispatch *server.Server
 	client   *http.Client
 	server   *http.Server
 	allow    AllowedIPs
+}
+
+type StringSlice []string
+
+func (s StringSlice) Contains(str string) bool {
+	for _, v := range s {
+		if v == str {
+			return true
+		}
+	}
+
+	return false
 }
 
 var ErrInvalidKey = fmt.Errorf("provided key is not authorized")
@@ -63,32 +84,48 @@ func (c *Config) Start() {
 	smx.Handle("/register", http.HandlerFunc(c.dispatch.HandleRegister)) // apache log can't do websockets.
 	smx.Handle("/request/", apache.Wrap(http.StripPrefix("/request",
 		c.validateUpstream(http.HandlerFunc(c.dispatch.HandleRequest))), os.Stdout))
-	smx.Handle("/status", apache.Wrap(c.validateUpstream(http.HandlerFunc(c.handleStatus)), os.Stdout))
 	smx.Handle("/", apache.Wrap(http.HandlerFunc(c.handleAll), os.Stdout))
 
-	// Dispatch connection from available pools to client requests
-	// in a separate thread from the server thread.
-	go c.dispatch.StartDispatcher()
+	var tlsConfig *tls.Config
+
+	if c.CacheDir != "" && len(c.SSLNames) > 0 && c.CFToken != "" {
+		certmagic.DefaultACME.Email = c.Email
+		certmagic.Default.Storage = &certmagic.FileStorage{Path: c.CacheDir}
+		certmagic.DefaultACME.DNS01Solver = &certmagic.DNS01Solver{
+			DNSProvider: &cloudflare.Provider{APIToken: c.CFToken},
+		}
+
+		var err error
+		if tlsConfig, err = certmagic.TLS(c.SSLNames); err != nil {
+			log.Fatalln("CertMagic TLS config failed:", err)
+		}
+	}
 
 	c.server = &http.Server{
 		Addr:        c.ListenAddr,
 		Handler:     smx,
 		ReadTimeout: c.Config.Timeout,
+		TLSConfig:   tlsConfig,
 	}
 
-	go func() {
-		var err error
+	// Dispatch connection from available pools to client requests.
+	go c.dispatch.StartDispatcher()
+	// In a separate thread from the server thread.
+	go c.runWebServer()
+}
 
-		if c.SSLCrtPath != "" && c.SSLKeyPath != "" {
-			err = c.server.ListenAndServeTLS(c.SSLCrtPath, c.SSLKeyPath)
-		} else {
-			err = c.server.ListenAndServe()
-		}
+func (c *Config) runWebServer() {
+	var err error
 
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalln("Web server failed, exiting:", err)
-		}
-	}()
+	if c.server.TLSConfig != nil {
+		err = c.server.ListenAndServeTLS("", "")
+	} else {
+		err = c.server.ListenAndServe()
+	}
+
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Fatalln("Web server failed, exiting:", err)
+	}
 }
 
 func (c *Config) Shutdown() {

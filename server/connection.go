@@ -28,6 +28,7 @@ type Connection struct {
 	status    ConnectionStatus
 	idleSince time.Time
 	lock      sync.Mutex
+	metrics   *Metrics
 	// nextResponse is the channel to wait for an HTTP response.
 	//
 	// The `read` function waits to receive the HTTP response as a separate thread reader.

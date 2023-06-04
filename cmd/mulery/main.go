@@ -20,6 +20,9 @@ func main() {
 		log.Fatalf("Config File Error: %s", err)
 	}
 
+	mulery.SetupLogs()
+	mulery.PrintConfig()
+
 	mulery.Start()
 	defer mulery.Shutdown()
 

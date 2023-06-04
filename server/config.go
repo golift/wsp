@@ -43,6 +43,7 @@ type Server struct {
 	// "server" thread sends the value to this channel when accepting requests in the endpoint /requests,
 	// and "dispatcher" thread reads this channel.
 	dispatcher chan *dispatchRequest
+	metrics    *Metrics
 }
 
 // poolConfig is a struct for transitting a new pool's data through a channel.
@@ -84,5 +85,6 @@ func NewServer(config *Config) *Server {
 		newPool:    make(chan *poolConfig, defaultPoolBuffer),
 		dispatcher: make(chan *dispatchRequest),
 		pools:      make(map[clientID]*Pool),
+		metrics:    getMetrics(),
 	}
 }

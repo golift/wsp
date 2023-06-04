@@ -9,12 +9,15 @@ import (
 	"golift.io/rotatorr/timerotator"
 )
 
+// SetupLogs starts the logs rotation and sets logger output to the configured file(s).
+// You must call this before calling Start to setup logs, or things will panic.
+//
 //nolint:gomnd
-func (c *Config) setupLogs() *log.Logger {
-	httpLog := log.New(os.Stdout, "", 0)
+func (c *Config) SetupLogs() {
+	c.httpLog = log.New(os.Stdout, "", 0)
 
 	if c.HTTPLog != "" && c.HTTPLogMB > 0 {
-		httpLog.SetOutput(rotatorr.NewMust(&rotatorr.Config{
+		c.httpLog.SetOutput(rotatorr.NewMust(&rotatorr.Config{
 			Filepath: c.HTTPLog,
 			FileSize: c.HTTPLogMB * 1024 * 1024,
 			FileMode: 0o644,
@@ -24,7 +27,7 @@ func (c *Config) setupLogs() *log.Logger {
 
 	if c.LogFile == "" {
 		c.log = log.New(os.Stderr, "", log.LstdFlags)
-		return httpLog
+		return
 	}
 
 	var rotator *rotatorr.Logger
@@ -46,10 +49,8 @@ func (c *Config) setupLogs() *log.Logger {
 	log.SetOutput(rotator)
 
 	if c.HTTPLog == "" || c.HTTPLogMB < 1 {
-		httpLog.SetOutput(rotator)
+		c.httpLog.SetOutput(rotator)
 	}
-
-	return httpLog
 }
 
 // Debugf writes log lines... to stdout and/or a file.
@@ -67,6 +68,7 @@ func (c *Config) Errorf(msg string, v ...interface{}) {
 	c.log.Printf("[ERROR] "+msg, v...)
 }
 
+// PrintConfig logs the current configuration information.
 func (c *Config) PrintConfig() {
 	c.Printf("=> Mulery Starting, pid: %d", os.Getpid())
 	c.Printf("=> Listen Address: %s", c.ListenAddr)

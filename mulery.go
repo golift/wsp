@@ -15,6 +15,7 @@ import (
 	"github.com/caddyserver/certmagic"
 	apachelog "github.com/lestrrat-go/apache-logformat/v2"
 	"github.com/libdns/cloudflare"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golift.io/cnfgfile"
 	"golift.io/mulery/mulch"
 	"golift.io/mulery/server"
@@ -53,6 +54,7 @@ type Config struct {
 	server   *http.Server
 	allow    AllowedIPs
 	log      *log.Logger
+	httpLog  *log.Logger
 }
 
 type StringSlice []string
@@ -89,21 +91,26 @@ func LoadConfigFile(path string) (*Config, error) {
 
 // Start HTTP server.
 func (c *Config) Start() {
-	httpLog := c.setupLogs()
+	if c.log == nil {
+		c.SetupLogs()
+	}
+
 	c.dispatch = server.NewServer(c.Config)
 	c.allow = MakeIPs(c.Upstreams)
 	smx := http.NewServeMux()
 	apache, _ := apachelog.New(`%h %{X-User-ID}i - %t "%r" %>s %b "%{` + c.IDHeader + `}i" "%{User-agent}i" - %{ms}Tms`)
 
+	smx.Handle("/metrics", apache.Wrap(c.ValidateUpstream(promhttp.Handler()), c.httpLog.Writer()))
 	smx.Handle("/register", http.HandlerFunc(c.dispatch.HandleRegister)) // apache log can't do websockets.
 	smx.Handle("/request/", apache.Wrap(http.StripPrefix("/request",
-		c.ValidateUpstream(http.HandlerFunc(c.dispatch.HandleRequest))), httpLog.Writer()))
-	smx.Handle("/", apache.Wrap(http.HandlerFunc(c.HandleAll), httpLog.Writer()))
+		c.ValidateUpstream(http.HandlerFunc(c.dispatch.HandleRequest))), c.httpLog.Writer()))
+	smx.Handle("/", apache.Wrap(http.HandlerFunc(c.HandleAll), c.httpLog.Writer()))
 
 	var tlsConfig *tls.Config
 
 	if c.CacheDir != "" && len(c.SSLNames) > 0 && c.CFToken != "" {
 		certmagic.DefaultACME.Email = c.Email
+		certmagic.DefaultACME.Agreed = true
 		certmagic.Default.Storage = &certmagic.FileStorage{Path: c.CacheDir}
 		certmagic.DefaultACME.DNS01Solver = &certmagic.DNS01Solver{
 			DNSProvider: &cloudflare.Provider{APIToken: c.CFToken},
@@ -122,8 +129,6 @@ func (c *Config) Start() {
 		ReadTimeout: c.Config.Timeout,
 		TLSConfig:   tlsConfig,
 	}
-
-	c.PrintConfig()
 
 	// Dispatch connection from available pools to client requests.
 	go c.dispatch.StartDispatcher()

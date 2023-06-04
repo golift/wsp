@@ -7,31 +7,47 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"golift.io/mulery/mulch"
 )
 
+// ProxyError log error and return a HTTP 526 error with the message.
+func (s *Server) ProxyError(w http.ResponseWriter, err error) {
+	s.Config.Logger.Errorf("%v", err)
+	http.Error(w, err.Error(), mulch.ProxyErrorCode)
+
+	if s.metrics != nil {
+		s.metrics.ReqStatus.WithLabelValues(fmt.Sprint(mulch.ProxyErrorCode)).Inc()
+	}
+}
+
 // HandleRequest receives http requests for /request paths.
 func (s *Server) HandleRequest(resp http.ResponseWriter, req *http.Request) {
+	if s.metrics != nil {
+		start := time.Now()
+		defer func() { s.metrics.ReqTime.Observe(time.Since(start).Seconds()) }()
+	}
+
 	// Receive requests to be proxied; parse destination URL if it exists (otherwise use the incoming url).
 	if dstURL := req.Header.Get("X-PROXY-DESTINATION"); dstURL != "" {
 		var err error
 		// r.URL is used in proxyRequest().
 		if req.URL, err = url.Parse(dstURL); err != nil {
-			mulch.ProxyError(resp, fmt.Errorf("parsing X-PROXY-DESTINATION header: %w", err))
+			s.ProxyError(resp, fmt.Errorf("parsing X-PROXY-DESTINATION header: %w", err))
 			return
 		}
 	}
 
 	if len(s.pools) == 0 {
-		mulch.ProxyError(resp, fmt.Errorf("%w: no pools registered", ErrNoProxyTarget))
+		s.ProxyError(resp, fmt.Errorf("%w: no pools registered", ErrNoProxyTarget))
 		return
 	}
 
 	clientID, err := s.getClientID(req)
 	if err != nil {
-		mulch.ProxyError(resp, err)
+		s.ProxyError(resp, err)
 		return
 	}
 
@@ -51,7 +67,7 @@ func (s *Server) HandleRequest(resp http.ResponseWriter, req *http.Request) {
 	connection := <-request.connection
 	if connection == nil {
 		// Dispatcher is `nil` which means the target has no pool.
-		mulch.ProxyError(resp, fmt.Errorf("%w: %s", ErrNoProxyTarget, request.client))
+		s.ProxyError(resp, fmt.Errorf("%w: %s", ErrNoProxyTarget, request.client))
 		return
 	}
 
@@ -61,7 +77,7 @@ func (s *Server) HandleRequest(resp http.ResponseWriter, req *http.Request) {
 		connection.Close()
 		// Try to return an error to the client.
 		// This might fail if response headers have already been sent.
-		mulch.ProxyError(resp, fmt.Errorf("tunneling failure, connection closed: %w", err))
+		s.ProxyError(resp, fmt.Errorf("tunneling failure, connection closed: %w", err))
 	}
 }
 
@@ -71,14 +87,16 @@ func (s *Server) HandleRegister(resp http.ResponseWriter, req *http.Request) {
 	// 0. Validate the provided secret key.
 	secret, err := s.validateKey(req.Context(), req.Header)
 	if err != nil {
-		mulch.ProxyError(resp, err)
+		s.metrics.RegFail.Add(1)
+		s.ProxyError(resp, err)
+
 		return
 	}
 
 	// 1. Upgrade a received HTTP request to a WebSocket connection.
 	sock, err := s.upgrader.Upgrade(resp, req, nil)
 	if err != nil {
-		mulch.ProxyError(resp, fmt.Errorf("http upgrade failed: %w", err))
+		s.ProxyError(resp, fmt.Errorf("http upgrade failed: %w", err))
 		return
 	}
 
@@ -86,7 +104,7 @@ func (s *Server) HandleRegister(resp http.ResponseWriter, req *http.Request) {
 	// The first message should contain the remote Proxy name and pool size.
 	poolConfig, err := parseGreeting(sock)
 	if err != nil {
-		mulch.ProxyError(resp, err)
+		s.ProxyError(resp, err)
 		sock.Close()
 
 		return
@@ -95,6 +113,10 @@ func (s *Server) HandleRegister(resp http.ResponseWriter, req *http.Request) {
 	// 3. Register the connection into server pools.
 	poolConfig.secret = secret
 	s.newPool <- poolConfig
+
+	if s.metrics != nil {
+		s.metrics.Regs.Add(1)
+	}
 }
 
 func (s *Server) getClientID(req *http.Request) (clientID, error) {

@@ -21,6 +21,7 @@ type Pool struct {
 	askSize     chan struct{}
 	getSize     chan *PoolSize
 	mulch.Logger
+	metrics *Metrics
 }
 
 // clientID represents the identifier of the connected WebSocket client.
@@ -38,6 +39,7 @@ func NewPool(server *Server, id clientID, max int) *Pool {
 		askSize:     make(chan struct{}),
 		getSize:     make(chan *PoolSize),
 		Logger:      server.Config.Logger,
+		metrics:     server.metrics,
 	}
 
 	go pool.keepRunning() // gofunc:3 (N)

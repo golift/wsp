@@ -60,7 +60,7 @@ func (s *Server) cleanPools() {
 	busy := 0
 	closed := 0
 	conns := 0
-	pools := map[clientID]*Pool{}
+	pools := make(map[clientID]*Pool, len(s.pools))
 
 	for target, pool := range s.pools {
 		if pool.IsEmpty() {
@@ -80,6 +80,14 @@ func (s *Server) cleanPools() {
 	s.pools = pools
 	s.Config.Logger.Debugf("%d pools, %d connections, %d idle, %d busy, %d closed",
 		len(s.pools), conns, idle, busy, closed)
+
+	if s.metrics != nil {
+		s.metrics.Conns.Set(float64(conns))
+		s.metrics.Pools.Set(float64(len(pools)))
+		s.metrics.Busy.Set(float64(busy))
+		s.metrics.Idle.Set(float64(idle))
+		s.metrics.Closed.Set(float64(closed))
+	}
 }
 
 // dispatchRequest runs every time an http request comes into the server.

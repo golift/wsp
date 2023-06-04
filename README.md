@@ -20,7 +20,4 @@ How
 
 Websockets and some reverse-proxy engineering.
 
-TODO:
-- Prometheus metrics:
-pools (clients), connections, request/code counters, response times, break down api paths into tags, register requests, register failures
 

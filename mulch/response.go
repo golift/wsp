@@ -2,7 +2,6 @@ package mulch
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 )
 
@@ -39,10 +38,4 @@ func NewHTTPResponse(code int, size int64) []byte {
 	})
 
 	return jsonResponse
-}
-
-// ProxyError log error and return a HTTP 526 error with the message.
-func ProxyError(w http.ResponseWriter, err error) {
-	log.Println(err)
-	http.Error(w, err.Error(), ProxyErrorCode)
 }

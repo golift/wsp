@@ -98,7 +98,7 @@ func (c *Connection) read() {
 		}
 
 		if c.Status() != Busy {
-			// We received a wild unexpected message, but we're going to silently ignore it.
+			// We received a wild unexpected message.
 			break
 		}
 

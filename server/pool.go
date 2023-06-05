@@ -15,6 +15,7 @@ type Pool struct {
 	idleTimeout time.Duration
 	id          clientID
 	connections []*Connection
+	closed      int
 	idle        chan *Connection
 	newConn     chan *Connection
 	askClean    chan struct{}
@@ -100,6 +101,8 @@ func (pool *Pool) clean() {
 	for _, connection := range pool.connections {
 		if idle, keep = pool.cleanConnection(connection, idle); keep {
 			save = append(save, connection)
+		} else {
+			pool.closed++
 		}
 	}
 
@@ -153,7 +156,8 @@ func (pool *Pool) Size() *PoolSize {
 // size return the number of connection in each state in the pool. not thread safe.
 func (pool *Pool) size() *PoolSize {
 	size := &PoolSize{
-		Total: len(pool.connections),
+		Total:  len(pool.connections),
+		Closed: pool.closed,
 	}
 
 	for _, connection := range pool.connections {
@@ -162,8 +166,6 @@ func (pool *Pool) size() *PoolSize {
 			size.Idle++
 		case Busy:
 			size.Busy++
-		case Closed:
-			size.Closed++
 		}
 	}
 

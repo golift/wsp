@@ -55,7 +55,7 @@ func (c *Config) SetupLogs() {
 
 // Debugf writes log lines... to stdout and/or a file.
 func (c *Config) Debugf(msg string, v ...interface{}) {
-	c.log.Printf("[DENUG] "+msg, v...)
+	c.log.Printf("[DEBUG] "+msg, v...)
 }
 
 // Printf writes log lines... to stdout and/or a file.

@@ -143,10 +143,6 @@ func (c *Connection) sendResponseToClient(resp http.ResponseWriter, jsonResponse
 
 	resp.WriteHeader(httpResponse.StatusCode)
 
-	if c.metrics != nil {
-		c.metrics.ReqStatus.WithLabelValues(fmt.Sprint(httpResponse.StatusCode)).Inc()
-	}
-
 	return nil
 }
 

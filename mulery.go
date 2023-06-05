@@ -11,6 +11,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/caddyserver/certmagic"
 	apachelog "github.com/lestrrat-go/apache-logformat/v2"
@@ -101,9 +102,9 @@ func (c *Config) Start() {
 	apache, _ := apachelog.New(`%h %{X-User-ID}i - %t "%r" %>s %b "%{` + c.IDHeader + `}i" "%{User-agent}i" - %{ms}Tms`)
 
 	smx.Handle("/metrics", apache.Wrap(c.ValidateUpstream(promhttp.Handler()), c.httpLog.Writer()))
-	smx.Handle("/register", http.HandlerFunc(c.dispatch.HandleRegister)) // apache log can't do websockets.
+	smx.Handle("/register", c.dispatch.HandleRegister()) // apache log can't do websockets.
 	smx.Handle("/request/", apache.Wrap(http.StripPrefix("/request",
-		c.ValidateUpstream(http.HandlerFunc(c.dispatch.HandleRequest))), c.httpLog.Writer()))
+		c.ValidateUpstream(c.parsePath())), c.httpLog.Writer()))
 	smx.Handle("/", apache.Wrap(http.HandlerFunc(c.HandleAll), c.httpLog.Writer()))
 
 	var tlsConfig *tls.Config
@@ -134,6 +135,26 @@ func (c *Config) Start() {
 	go c.dispatch.StartDispatcher()
 	// In a separate thread from the server thread.
 	go c.runWebServer()
+}
+
+// parsePath is an assumption built for notifiarr.
+// This uses a portihon of the path as a label so
+// we can see response times of our requests per api endpoint.
+// We only use this tunnel to talk to 1 app, so the api paths we hit are bounded.
+// This method chops the end off to avoid unbounded items in the URI.
+func (c *Config) parsePath() http.HandlerFunc {
+	const maxPathSegments = 4
+
+	return func(resp http.ResponseWriter, req *http.Request) {
+		switch path := strings.SplitN(req.URL.Path, "/", maxPathSegments); {
+		case len(path) == 0:
+			c.dispatch.HandleRequest(req.URL.Path).ServeHTTP(resp, req)
+		case len(path) < 4 || !strings.HasPrefix(req.URL.Path, "/api/triggers"):
+			c.dispatch.HandleRequest(strings.Join(path, "/")).ServeHTTP(resp, req)
+		default:
+			c.dispatch.HandleRequest(strings.Join(path[:3], "/")).ServeHTTP(resp, req)
+		}
+	}
 }
 
 func (c *Config) runWebServer() {

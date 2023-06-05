@@ -1,13 +1,15 @@
 package server
 
 import (
+	"net/http"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// Metrics contains the exported prometheus metrics used by the application.
+// Metrics contains the exported application metrics in prometheus format.
 type Metrics struct {
 	Pools     prometheus.Gauge
 	Conns     prometheus.Gauge
@@ -16,9 +18,9 @@ type Metrics struct {
 	Closed    prometheus.Gauge
 	Regs      prometheus.Counter
 	RegFail   prometheus.Counter
-	ReqStatus *prometheus.CounterVec
-	ReqTime   prometheus.Histogram
 	Uptime    prometheus.CounterFunc
+	reqStatus *prometheus.CounterVec
+	reqTime   *prometheus.HistogramVec
 }
 
 func getMetrics() *Metrics {
@@ -53,18 +55,29 @@ func getMetrics() *Metrics {
 			Name: "mulery_registrations_failed_total",
 			Help: "The total count of websocket registrations that failed (auth problem)",
 		}),
-		ReqStatus: promauto.NewCounterVec(prometheus.CounterOpts{
+		reqStatus: promauto.NewCounterVec(prometheus.CounterOpts{
 			Name: "mulery_http_request_statuses_total",
 			Help: "The status codes of ->client requests",
-		}, []string{"code"}),
-		ReqTime: promauto.NewHistogram(prometheus.HistogramOpts{
+		}, []string{"code", "method"}),
+		reqTime: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "mulery_http_request_time_seconds",
-			Help:    "The duration of ->client requests",
+			Help:    "Duration of all HTTP requests",
 			Buckets: []float64{.1, .5, 1, 3, 10, 30, 60, 180, 600},
-		}),
+		}, []string{"code", "handler", "method"}),
 		Uptime: promauto.NewCounterFunc(prometheus.CounterOpts{
 			Name: "mulery_uptime_seconds_total",
 			Help: "Seconds Mulery has been running",
 		}, func() float64 { return time.Since(start).Seconds() }),
 	}
+}
+
+func (m *Metrics) Wrap(next http.HandlerFunc, handler string) http.Handler {
+	if m == nil {
+		return next
+	}
+
+	return promhttp.InstrumentHandlerDuration(
+		m.reqTime.MustCurryWith(prometheus.Labels{"handler": handler}),
+		promhttp.InstrumentHandlerCounter(m.reqStatus, next),
+	)
 }

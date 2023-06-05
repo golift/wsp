@@ -19,6 +19,7 @@ type Metrics struct {
 	Regs      prometheus.Counter
 	RegFail   prometheus.Counter
 	Uptime    prometheus.CounterFunc
+	PoolConns *prometheus.GaugeVec
 	reqStatus *prometheus.CounterVec
 	reqTime   *prometheus.HistogramVec
 }
@@ -59,6 +60,10 @@ func getMetrics() *Metrics {
 			Name: "mulery_http_request_statuses_total",
 			Help: "The status codes of ->client requests",
 		}, []string{"code", "method"}),
+		PoolConns: promauto.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "mulery_pools_by_count_of_connections",
+			Help: "Pools with N connections",
+		}, []string{"connections"}),
 		reqTime: promauto.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "mulery_http_request_time_seconds",
 			Help:    "Duration of ->client HTTP requests",

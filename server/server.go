@@ -56,10 +56,15 @@ func (s *Server) cleanPools() {
 		return
 	}
 
+	// we have to limit the label values to something, and this may even be too many.
+	const max = 50
+
 	idle := 0
 	busy := 0
 	closed := 0
 	conns := 0
+	connsPerPool := make(map[int]int, max)
+
 	pools := make(map[clientID]*Pool, len(s.pools))
 
 	for target, pool := range s.pools {
@@ -67,13 +72,14 @@ func (s *Server) cleanPools() {
 			s.Config.Logger.Debugf("Removing empty connection pool: %s", pool.id)
 			pool.Shutdown()
 			delete(s.pools, target)
-			closed++
 		} else {
 			pools[target] = pool
 			ps := pool.Size()
 			conns += ps.Total
 			idle += ps.Idle
 			busy += ps.Busy
+			closed += ps.Closed
+			connsPerPool[conns]++
 		}
 	}
 
@@ -82,6 +88,20 @@ func (s *Server) cleanPools() {
 		len(s.pools), conns, idle, busy, closed)
 
 	if s.metrics != nil {
+		for conns, pools := range connsPerPool {
+			if conns > max {
+				connsPerPool[max] += pools
+			}
+		}
+
+		for conns, pools := range connsPerPool {
+			if conns < max {
+				s.metrics.PoolConns.WithLabelValues(fmt.Sprint(conns)).Set(float64(pools))
+			} else if conns == max {
+				s.metrics.PoolConns.WithLabelValues(fmt.Sprint(conns, "+")).Set(float64(pools))
+			}
+		}
+
 		s.metrics.Conns.Set(float64(conns))
 		s.metrics.Pools.Set(float64(len(pools)))
 		s.metrics.Busy.Set(float64(busy))

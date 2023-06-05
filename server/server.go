@@ -56,15 +56,8 @@ func (s *Server) cleanPools() {
 		return
 	}
 
-	// we have to limit the label values to something, and this may even be too many.
-	const max = 50
-
-	idle := 0
-	busy := 0
-	closed := 0
-	conns := 0
-	connsPerPool := make(map[int]int, max)
-
+	totals := &PoolSize{}
+	connsPerPool := make(map[int]int)
 	pools := make(map[clientID]*Pool, len(s.pools))
 
 	for target, pool := range s.pools {
@@ -75,39 +68,47 @@ func (s *Server) cleanPools() {
 		} else {
 			pools[target] = pool
 			ps := pool.Size()
-			conns += ps.Total
-			idle += ps.Idle
-			busy += ps.Busy
-			closed += ps.Closed
-			connsPerPool[conns]++
+			totals.Total += ps.Total
+			totals.Idle += ps.Idle
+			totals.Busy += ps.Busy
+			totals.Closed += ps.Closed
+			connsPerPool[ps.Total]++
 		}
 	}
 
 	s.pools = pools
 	s.Config.Logger.Debugf("%d pools, %d connections, %d idle, %d busy, %d closed",
-		len(s.pools), conns, idle, busy, closed)
+		len(s.pools), totals.Total, totals.Idle, totals.Busy, totals.Closed)
+	s.saveMetrics(totals, connsPerPool)
+}
 
-	if s.metrics != nil {
-		for conns, pools := range connsPerPool {
-			if conns > max {
-				connsPerPool[max] += pools
-			}
-		}
-
-		for conns, pools := range connsPerPool {
-			if conns < max {
-				s.metrics.PoolConns.WithLabelValues(fmt.Sprint(conns)).Set(float64(pools))
-			} else if conns == max {
-				s.metrics.PoolConns.WithLabelValues(fmt.Sprint(conns, "+")).Set(float64(pools))
-			}
-		}
-
-		s.metrics.Conns.Set(float64(conns))
-		s.metrics.Pools.Set(float64(len(pools)))
-		s.metrics.Busy.Set(float64(busy))
-		s.metrics.Idle.Set(float64(idle))
-		s.metrics.Closed.Set(float64(closed))
+func (s *Server) saveMetrics(totals *PoolSize, connsPerPool map[int]int) {
+	if s.metrics == nil {
+		return
 	}
+
+	// we have to limit the label values to something, and this may even be too many.
+	const max = 50
+
+	for conns, pools := range connsPerPool {
+		if conns > max {
+			connsPerPool[max] += pools
+		}
+	}
+
+	for conns, pools := range connsPerPool {
+		if conns < max {
+			s.metrics.PoolConns.WithLabelValues(fmt.Sprint(conns)).Set(float64(pools))
+		} else if conns == max {
+			s.metrics.PoolConns.WithLabelValues(fmt.Sprint(conns, "+")).Set(float64(pools))
+		}
+	}
+
+	s.metrics.Conns.WithLabelValues("total").Set(float64(totals.Total))
+	s.metrics.Conns.WithLabelValues("busy").Set(float64(totals.Busy))
+	s.metrics.Conns.WithLabelValues("idle").Set(float64(totals.Idle))
+	s.metrics.Conns.WithLabelValues("closed").Set(float64(totals.Closed))
+	s.metrics.Pools.Set(float64(len(s.pools)))
 }
 
 // dispatchRequest runs every time an http request comes into the server.

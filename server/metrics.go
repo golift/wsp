@@ -59,11 +59,11 @@ func getMetrics() *Metrics {
 			Name: "mulery_http_request_statuses_total",
 			Help: "The status codes of ->client requests",
 		}, []string{"code", "method"}),
-		reqTime: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		reqTime: promauto.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "mulery_http_request_time_seconds",
-			Help:    "Duration of all HTTP requests",
+			Help:    "Duration of ->client HTTP requests",
 			Buckets: []float64{.1, .5, 1, 3, 10, 30, 60, 180, 600},
-		}, []string{"code", "handler", "method"}),
+		}, []string{"code", "method", "handler"}),
 		Uptime: promauto.NewCounterFunc(prometheus.CounterOpts{
 			Name: "mulery_uptime_seconds_total",
 			Help: "Seconds Mulery has been running",

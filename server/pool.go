@@ -30,10 +30,13 @@ type clientID string
 
 // NewPool creates a new Pool, and starts one go routine per pool to keep it clean and running.
 // Each pool represents 1 client, and each client may have many connections.
-func NewPool(server *Server, id clientID, max int) *Pool {
+func NewPool(server *Server, config *PoolConfig) *Pool {
+	// update pool size; we add 1 so the pool may have 1 thread more than it's minimum active.
+	// This 1 allows slightly less thread teardown/bringup.
 	pool := &Pool{
-		id:          id,
-		idle:        make(chan *Connection, max),
+		id:          config.ID,
+		minSize:     config.MinConns + 1,
+		idle:        make(chan *Connection, config.MaxConns),
 		idleTimeout: server.Config.IdleTimeout,
 		newConn:     make(chan *Connection),
 		askClean:    make(chan struct{}),
@@ -52,7 +55,7 @@ func (pool *Pool) shutdown() {
 	pool.done = true
 
 	for _, connection := range pool.connections {
-		connection.Close()
+		connection.Close("shutdown")
 	}
 
 	close(pool.askClean)
@@ -121,7 +124,7 @@ func (pool *Pool) cleanConnection(connection *Connection, idle int) (int, bool) 
 			// Terminate the connection if it is idle since more that IdleTimeout
 			pool.Printf("Closing idle connection: %s, tunnels: %d, max: %d",
 				pool.id, len(pool.connections), cap(pool.idle))
-			connection.close()
+			connection.close("idle")
 		}
 	}
 

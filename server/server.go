@@ -182,25 +182,22 @@ func (s *Server) findSocketConnection(request *dispatchRequest) (*Connection, bo
 
 // Register the connection into server pools.
 // This is called through a channel from the register handler.
-func (s *Server) registerPool(newPool *poolConfig) {
+func (s *Server) registerPool(newPool *PoolConfig) {
 	if newPool.secret != "" {
 		hash := sha256.New()
-		hash.Write([]byte(newPool.secret + string(newPool.clientID)))
+		hash.Write([]byte(newPool.secret + string(newPool.ID)))
 		// As promised, if a custom key validator returns a secret(string),
 		// hash that with the client id to create a new client id.
 		// This is custom logic you probably don't want, so don't return a string from your key validator.
-		newPool.clientID = clientID(fmt.Sprintf("%x", hash.Sum(nil)))
+		newPool.ID = clientID(fmt.Sprintf("%x", hash.Sum(nil)))
 	}
 
-	if pool, ok := s.pools[newPool.clientID]; !ok || pool == nil {
-		s.pools[newPool.clientID] = NewPool(s, newPool.clientID, newPool.max)
+	if pool, ok := s.pools[newPool.ID]; !ok || pool == nil {
+		s.pools[newPool.ID] = NewPool(s, newPool)
 	}
-
-	// update pool size
-	s.pools[newPool.clientID].minSize = newPool.size
 
 	// Add the WebSocket connection to the pool
-	s.pools[newPool.clientID].Register(newPool.sock)
+	s.pools[newPool.ID].Register(newPool.Sock)
 }
 
 // Shutdown stop the Server.

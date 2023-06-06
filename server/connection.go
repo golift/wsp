@@ -70,7 +70,7 @@ func (c *Connection) read() {
 			c.pool.Errorf("Websocket crash recovered: %s\n%s", r, string(debug.Stack()))
 		}
 
-		c.Close()
+		c.Close("socket panic")
 	}()
 
 	var (
@@ -159,19 +159,19 @@ func (c *Connection) Release() {
 }
 
 // Close the connection.
-func (c *Connection) Close() {
+func (c *Connection) Close(reason string) {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	c.close()
+	c.close(reason)
 }
 
 // Close the connection (without lock).
-func (c *Connection) close() {
+func (c *Connection) close(reason string) {
 	if c.status == Closed {
 		return
 	}
 
-	c.pool.Debugf("Closing connection from %s", c.pool.id)
+	c.pool.Debugf("Closing connection from %s (reason: %s)", c.pool.id, reason)
 	// Unlock a possible wild read() message.
 	close(c.nextResponse)
 	// Close the underlying TCP connection.

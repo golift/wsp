@@ -73,7 +73,7 @@ func (s *Server) HandleRequest(name string) http.Handler {
 		// Send the incoming http request to the peer through the WebSocket connection.
 		if err := connection.proxyRequest(resp, req); err != nil {
 			// An error occurred throw the connection away.
-			connection.Close()
+			connection.Close("proxy error")
 			// Try to return an error to the client.
 			// This might fail if response headers have already been sent.
 			s.ProxyError(resp, fmt.Errorf("tunneling failure, connection closed: %w", err), "")
@@ -82,7 +82,7 @@ func (s *Server) HandleRequest(name string) http.Handler {
 }
 
 // HandleRegister receives http requests for /register paths.
-// Receives the WebSocket upgrade handshake request from wsp_client.
+// Receives the WebSocket upgrade handshake request from clients.
 func (s *Server) HandleRegister() http.Handler {
 	return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
 		// 0. Validate the provided secret key.
@@ -154,7 +154,7 @@ func (s *Server) validateKey(ctx context.Context, header http.Header) (string, e
 }
 
 // 2. Wait for a greeting message from the peer and parse it.
-func parseGreeting(sock *websocket.Conn) (*poolConfig, error) {
+func parseGreeting(sock *websocket.Conn) (*PoolConfig, error) {
 	_, greeting, err := sock.ReadMessage()
 	if err != nil {
 		return nil, fmt.Errorf("unable to read greeting message: %w", err)
@@ -176,5 +176,5 @@ func parseGreeting(sock *websocket.Conn) (*poolConfig, error) {
 		return nil, fmt.Errorf("unable to parse greeting message: %w", err)
 	}
 
-	return &poolConfig{sock, clientID(split[0]), size, max, ""}, nil
+	return &PoolConfig{size, max, clientID(split[0]), "", sock}, nil
 }

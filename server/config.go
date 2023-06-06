@@ -38,7 +38,7 @@ type Server struct {
 	upgrader websocket.Upgrader
 	// In pools, keep connections with WebSocket peers.
 	pools   map[clientID]*Pool
-	newPool chan *poolConfig
+	newPool chan *PoolConfig
 	// Through dispatcher channel it communicates between "http server" thread and "dispatcher" thread.
 	// "server" thread sends the value to this channel when accepting requests in the endpoint /requests,
 	// and "dispatcher" thread reads this channel.
@@ -46,13 +46,13 @@ type Server struct {
 	metrics    *Metrics
 }
 
-// poolConfig is a struct for transitting a new pool's data through a channel.
-type poolConfig struct {
-	sock     *websocket.Conn
-	clientID clientID
-	size     int
-	max      int
+// PoolConfig is a struct for transitting a new pool's data through a channel.
+type PoolConfig struct {
+	MinConns int
+	MaxConns int
+	ID       clientID
 	secret   string
+	Sock     *websocket.Conn
 }
 
 // dispatchRequest is used to request a proxy connection from the dispatcher.
@@ -82,7 +82,7 @@ func NewServer(config *Config) *Server {
 	return &Server{
 		Config:     config,
 		upgrader:   websocket.Upgrader{},
-		newPool:    make(chan *poolConfig, defaultPoolBuffer),
+		newPool:    make(chan *PoolConfig, defaultPoolBuffer),
 		dispatcher: make(chan *dispatchRequest),
 		pools:      make(map[clientID]*Pool),
 		metrics:    getMetrics(),

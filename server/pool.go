@@ -123,12 +123,12 @@ func (pool *Pool) cleanConnection(connection *Connection, idle int) (int, bool) 
 
 	if connection.status == Idle {
 		idle++
-		if idle > pool.minSize && time.Since(connection.idleSince) > pool.idleTimeout {
-			// We have enough idle connections in the pool.
-			// Terminate the connection if it is idle since more that IdleTimeout
-			pool.Printf("Closing idle connection: %s, tunnels: %d, max: %d",
+		// Terminate the connection if it is idle since more that IdleTimeout.
+		if age := time.Since(connection.idleSince); idle > pool.minSize && age > pool.idleTimeout {
+			// We have enough idle connections in the pool, and this one is old.
+			pool.Printf("Closing idle connection: %s, tunnels: %d , max: %d",
 				pool.id, len(pool.connections), cap(pool.idle))
-			connection.close("idle")
+			connection.close("idle " + age.String())
 		}
 	}
 

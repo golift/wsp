@@ -27,7 +27,7 @@ type Connection struct {
 	ws        *websocket.Conn
 	status    ConnectionStatus
 	idleSince time.Time
-	lock      sync.Mutex
+	lock      sync.RWMutex
 	// nextResponse is the channel to wait for an HTTP response.
 	//
 	// The `read` function waits to receive the HTTP response as a separate thread reader.
@@ -52,11 +52,10 @@ func NewConnection(pool *Pool, ws *websocket.Conn) *Connection {
 		pool:         pool,
 		ws:           ws,
 		nextResponse: make(chan chan io.Reader),
-		status:       Idle,
 	}
-	// Mark that this connection is ready to use for relay.
-	conn.Release()
-	// Start to listen to incoming messages over the WebSocket connection.
+	// Mark connection as ready for use.
+	conn.Ready()
+	// Start listening for incoming messages over the WebSocket connection.
 	go conn.read()
 
 	return conn
@@ -81,7 +80,7 @@ func (c *Connection) read() {
 
 	for {
 		if c.Status() == Closed {
-			break
+			return
 		}
 
 		// https://godoc.org/github.com/gorilla/websocket#hdr-Control_Messages
@@ -94,12 +93,12 @@ func (c *Connection) read() {
 
 		// We will block here until a message is received or the ws is closed
 		if _, reader, err = c.ws.NextReader(); err != nil {
-			break
+			return
 		}
 
 		if c.Status() != Busy {
-			// We received a wild unexpected message.
-			break
+			// We received a wild unexpected message, just close the connection.
+			return
 		}
 
 		// When it gets here, it is expected that either a HttpResponse or a HttpResponseBody has been returned.
@@ -108,7 +107,7 @@ func (c *Connection) read() {
 		// that is invoked in the "server" thread.
 		// https://github.com/hgsgtk/wsp/blob/29cc73bbd67de18f1df295809166a7a5ef52e9fa/server/connection.go#L157
 		if resp = <-c.nextResponse; resp == nil {
-			break // We have been unlocked by Close().
+			return // We have been unlocked by Close().
 		}
 
 		// Send the reader back to Connection.proxyRequest.
@@ -121,30 +120,28 @@ func (c *Connection) read() {
 }
 
 func (c *Connection) Status() ConnectionStatus {
-	c.lock.Lock()
-	defer c.lock.Unlock()
+	c.lock.RLock()
+	defer c.lock.RUnlock()
 
 	return c.status
 }
 
 // Take notifies that this connection is going to be used.
-func (c *Connection) Take() bool {
+// Returns nil if the connection is busy.
+func (c *Connection) Take() *Connection {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
-	switch c.status {
-	case Closed:
-		return false
-	case Busy:
-		return false
-	default:
+	if c.status == Idle {
 		c.status = Busy
-		return true
+		return c
 	}
+
+	return nil
 }
 
-// Release signals that this connection is ready to be used again.
-func (c *Connection) Release() {
+// Ready signals that this connection is ready to be used again.
+func (c *Connection) Ready() {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
@@ -154,7 +151,7 @@ func (c *Connection) Release() {
 
 	c.idleSince = time.Now()
 	c.status = Idle
-	// stick this connection into the idle buffer pool.
+	// Stick this connection into the idle buffer pool.
 	c.pool.idle <- c
 }
 

@@ -64,7 +64,7 @@ func (c *Connection) proxyRequest(resp http.ResponseWriter, req *http.Request) e
 	}
 
 	// Notify read() that we are done reading the response body.
-	c.Release()
+	c.Ready()
 
 	return nil
 }

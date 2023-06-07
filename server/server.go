@@ -23,7 +23,7 @@ func (s *Server) StartDispatcher() {
 	cleaner := time.NewTicker(cleanInterval)
 	defer cleaner.Stop()
 
-	for i := uint(0); i <= s.Config.Dispatchers; i++ {
+	for i := s.Config.Dispatchers; i > 0; i-- {
 		go func() {
 			for r := range s.dispatcher {
 				s.dispatchRequest(r)
@@ -136,15 +136,13 @@ func (s *Server) dispatchRequest(request *dispatchRequest) {
 	// Get the pool reply from the main thread.
 	pool := <-s.repPool
 	if pool == nil {
-		return
+		return // no client pool with that name.
 	}
 
-	// this blocks until an idle connections is available.
+	// this blocks until an idle connection is available.
 	connection := <-pool.idle
 	// Verify that we can use this connection and take it.
-	if connection.Take() {
-		request.connection <- connection
-	}
+	request.connection <- connection.Take()
 }
 
 // Register the connection into server pools.
@@ -176,7 +174,7 @@ func (s *Server) Shutdown() {
 func (s *Server) shutdown() {
 	close(s.dispatcher)
 
-	for i := uint(0); i <= s.Config.Dispatchers; i++ {
+	for i := s.Config.Dispatchers; i > 0; i-- {
 		<-s.getPool // wait for dispatchers to finish.
 	}
 

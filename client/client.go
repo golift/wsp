@@ -3,23 +3,30 @@ package client
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"golift.io/mulery/mulch"
 )
 
 const (
-	defaultPoolIdleSize = 10
-	defaultPoolMaxSize  = 100
+	DefaultMaxBackoff   = 30 * time.Second
+	DefaultBackoffReset = 10 * time.Second
+	DefaultPoolIdleSize = 10
+	DefaultPoolMaxSize  = 100
 )
 
 // Config is the required data to initialize a client proxy connection.
 type Config struct {
-	ID           string
-	Targets      []string
-	PoolIdleSize int
-	PoolMaxSize  int
-	SecretKey    string
+	ID            string
+	Targets       []string
+	PoolIdleSize  int
+	PoolMaxSize   int
+	SecretKey     string
+	CleanInterval time.Duration
+	Backoff       time.Duration
+	MaxBackoff    time.Duration
+	BackoffReset  time.Duration
 	// Handler is an optional custom handler for all proxied requests.
 	// Leaving this nil makes all requests use an empty http.Client.
 	Handler func(http.ResponseWriter, *http.Request)
@@ -40,10 +47,13 @@ type Client struct {
 // NewConfig creates a new ProxyConfig.
 func NewConfig() *Config {
 	return &Config{
-		Targets:      []string{"ws://127.0.0.1:8080/register"},
-		PoolIdleSize: defaultPoolIdleSize,
-		PoolMaxSize:  defaultPoolMaxSize,
-		Logger:       &mulch.DefaultLogger{Silent: false},
+		Targets:       []string{"ws://127.0.0.1:8080/register"},
+		PoolIdleSize:  DefaultPoolIdleSize,
+		PoolMaxSize:   DefaultPoolMaxSize,
+		Logger:        &mulch.DefaultLogger{Silent: false},
+		CleanInterval: time.Second,
+		MaxBackoff:    DefaultMaxBackoff,
+		BackoffReset:  DefaultBackoffReset,
 	}
 }
 
@@ -51,6 +61,18 @@ func NewConfig() *Config {
 func NewClient(config *Config) *Client {
 	if config.Logger == nil {
 		config.Logger = &mulch.DefaultLogger{Silent: true}
+	}
+
+	if config.CleanInterval < time.Second {
+		config.CleanInterval = time.Second
+	}
+
+	if config.MaxBackoff == 0 {
+		config.MaxBackoff = DefaultMaxBackoff
+	}
+
+	if config.BackoffReset == 0 {
+		config.BackoffReset = DefaultBackoffReset
 	}
 
 	return &Client{

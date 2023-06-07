@@ -54,12 +54,12 @@ func NewPool(client *Client, target string, secretKey string) *Pool {
 	}
 }
 
-// Start connects to the remote server and runs a one-second loop to maintain the connection.
+// Start connects to the remote server and runs a ticker loop to maintain the connection.
 func (p *Pool) Start(ctx context.Context) {
 	p.connector(ctx, time.Now())
 
 	go func() {
-		ticker := time.NewTicker(time.Second)
+		ticker := time.NewTicker(p.client.CleanInterval)
 
 		defer func() {
 			ticker.Stop()
@@ -94,14 +94,13 @@ func (p *Pool) Start(ctx context.Context) {
 	}()
 }
 
-// The garbage collector runs every second.
+// The garbage collector runs every second or so.
 // If the size of the pool is not equivalent to the desired size,
 // then N go functions are created that add additional pool connections.
 // If the connection fails, the connection is removed from the pool.
 func (p *Pool) connector(ctx context.Context, now time.Time) {
-	//nolint:gomnd
-	if p.backOff > 20*time.Second {
-		p.backOff = 10 * time.Second // keep bringing it back down.
+	if p.backOff > p.client.MaxBackoff {
+		p.backOff = p.client.BackoffReset // keep bringing it back down.
 	}
 
 	if now.Sub(p.lastTry) < p.backOff {
@@ -129,13 +128,13 @@ func (p *Pool) connector(ctx context.Context, now time.Time) {
 		conn := NewConnection(p)
 		if err := conn.Connect(ctx); err != nil {
 			p.client.Errorf("Connecting to tunnel @ %s: %s", p.target, err)
-			p.backOff += time.Second
+			p.backOff += p.client.Backoff
 
 			break // don't try any more this round.
 		}
 
 		p.connections = append(p.connections, conn)
-		p.backOff = time.Second
+		p.backOff = p.client.Backoff
 	}
 }
 

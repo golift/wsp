@@ -127,10 +127,6 @@ func (s *Server) saveMetrics(totals *PoolSize, connsPerPool map[int]int) {
 func (s *Server) dispatchRequest(request *dispatchRequest) {
 	defer close(request.connection)
 
-	if request.client == "" {
-		return
-	}
-
 	// Ask the main thread for this pool by ID.
 	s.getPool <- request.client
 	// Get the pool reply from the main thread.
@@ -139,7 +135,7 @@ func (s *Server) dispatchRequest(request *dispatchRequest) {
 		return // no client pool with that name.
 	}
 
-	// this blocks until an idle connection is available.
+	// This blocks until an idle connection is available.
 	connection := <-pool.idle
 	// Verify that we can use this connection and take it.
 	request.connection <- connection.Take()

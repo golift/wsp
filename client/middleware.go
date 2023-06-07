@@ -22,14 +22,14 @@ type req2Handler struct {
 }
 
 // customHandler builds the logic to convert an http.ResponseWriter into an http.Response.
-func (connection *Connection) customHandler(req *http.Request) bool {
+func (c *Connection) customHandler(req *http.Request) bool {
 	writer := &req2Handler{
 		req:  req,
 		resp: &http.Response{Header: make(http.Header)},
-		conn: connection,
+		conn: c,
 	}
 
-	connection.pool.client.Config.Handler(writer, req)
+	c.pool.client.Config.Handler(writer, req)
 	writer.body.Close()
 
 	return !writer.err

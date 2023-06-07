@@ -15,9 +15,11 @@ type Pool struct {
 	done        chan struct{}
 	getSize     chan struct{}
 	repSize     chan *PoolSize
-	delChan     chan *Connection
+	conChan     chan *Connection
 	repChan     chan struct{}
 	shutdown    bool
+	lastTry     time.Time
+	backOff     time.Duration
 }
 
 // PoolSize represent the number of open connections per status.
@@ -46,46 +48,47 @@ func NewPool(client *Client, target string, secretKey string) *Pool {
 		done:        make(chan struct{}),
 		getSize:     make(chan struct{}),
 		repSize:     make(chan *PoolSize),
-		delChan:     make(chan *Connection),
+		conChan:     make(chan *Connection),
 		repChan:     make(chan struct{}),
+		backOff:     time.Second,
 	}
 }
 
 // Start connects to the remote server and runs a one-second loop to maintain the connection.
-func (pool *Pool) Start(ctx context.Context) {
-	pool.connector(ctx)
+func (p *Pool) Start(ctx context.Context) {
+	p.connector(ctx, time.Now())
 
 	go func() {
 		ticker := time.NewTicker(time.Second)
 
 		defer func() {
 			ticker.Stop()
-			close(pool.getSize)
-			close(pool.repSize)
-			close(pool.delChan)
-			close(pool.repChan)
+			close(p.getSize)
+			close(p.repSize)
+			close(p.conChan)
+			close(p.repChan)
 		}()
 
 		for {
 			select {
-			case <-pool.done:
-				for _, conn := range pool.connections {
+			case <-p.done:
+				for _, conn := range p.connections {
 					conn.Close()
 				}
 
 				return
-			case <-ticker.C:
-				pool.connector(ctx)
-			case <-pool.getSize:
-				pool.repSize <- pool.size()
-			case conn := <-pool.delChan:
+			case now := <-ticker.C:
+				p.connector(ctx, now)
+			case <-p.getSize:
+				p.repSize <- p.size()
+			case conn := <-p.conChan:
 				if conn == nil {
-					pool.connector(ctx)
+					p.connector(ctx, time.Now())
 				} else {
-					pool.remove(conn)
+					p.remove(conn)
 				}
 
-				pool.repChan <- struct{}{}
+				p.repChan <- struct{}{}
 			}
 		}
 	}()
@@ -95,10 +98,20 @@ func (pool *Pool) Start(ctx context.Context) {
 // If the size of the pool is not equivalent to the desired size,
 // then N go functions are created that add additional pool connections.
 // If the connection fails, the connection is removed from the pool.
-func (pool *Pool) connector(ctx context.Context) {
-	poolSize := pool.size()
+func (p *Pool) connector(ctx context.Context, now time.Time) {
+	//nolint:gomnd
+	if p.backOff > 20*time.Second {
+		p.backOff = 10 * time.Second // keep bringing it back down.
+	}
+
+	if now.Sub(p.lastTry) < p.backOff {
+		return
+	}
+
+	p.lastTry = now
+	poolSize := p.size()
 	// Create enough connection to fill the pool.
-	toCreate := pool.client.Config.PoolIdleSize - poolSize.Idle
+	toCreate := p.client.Config.PoolIdleSize - poolSize.Idle
 
 	// Create only one connection if the pool is empty.
 	if poolSize.Total == 0 && toCreate < 1 {
@@ -106,36 +119,40 @@ func (pool *Pool) connector(ctx context.Context) {
 	}
 
 	// Open at most PoolMaxSize connections.
-	if poolSize.Total+toCreate > pool.client.Config.PoolMaxSize {
-		toCreate = pool.client.Config.PoolMaxSize - poolSize.Total
+	if poolSize.Total+toCreate > p.client.Config.PoolMaxSize {
+		toCreate = p.client.Config.PoolMaxSize - poolSize.Total
 	}
 
 	// Try to reach ideal pool size.
 	for ; toCreate > 0; toCreate-- {
 		// This is the only place a connection is added to the pool.
-		conn := NewConnection(pool)
+		conn := NewConnection(p)
 		if err := conn.Connect(ctx); err != nil {
-			pool.client.Errorf("Connecting to tunnel @ %s: %s", pool.target, err)
-		} else {
-			pool.connections = append(pool.connections, conn)
+			p.client.Errorf("Connecting to tunnel @ %s: %s", p.target, err)
+			p.backOff += time.Second
+
+			break // don't try any more this round.
 		}
+
+		p.connections = append(p.connections, conn)
+		p.backOff = time.Second
 	}
 }
 
 // Remove a connection from the pool.
-func (pool *Pool) Remove(conn *Connection) {
-	if !pool.shutdown {
-		pool.delChan <- conn
-		<-pool.repChan
+func (p *Pool) Remove(conn *Connection) {
+	if !p.shutdown {
+		p.conChan <- conn
+		<-p.repChan
 	}
 }
 
-func (pool *Pool) remove(connection *Connection) {
+func (p *Pool) remove(connection *Connection) {
 	// This trick uses the fact that a slice shares the same backing array and capacity as the original,
 	// so the storage is reused for the filtered slice. Of course, the original contents are modified.
 	var filtered []*Connection // == nil
 
-	for _, conn := range pool.connections {
+	for _, conn := range p.connections {
 		if connection != conn {
 			filtered = append(filtered, conn)
 		} else {
@@ -143,31 +160,31 @@ func (pool *Pool) remove(connection *Connection) {
 		}
 	}
 
-	pool.connections = filtered
+	p.connections = filtered
 }
 
 // Shutdown and close all connections in the pool.
-func (pool *Pool) Shutdown() {
-	pool.shutdown = true
-	close(pool.done)
+func (p *Pool) Shutdown() {
+	p.shutdown = true
+	close(p.done)
 }
 
-func (poolSize *PoolSize) String() string {
+func (ps *PoolSize) String() string {
 	return fmt.Sprintf("Connecting %d, idle %d, running %d, total %d",
-		poolSize.Connecting, poolSize.Idle, poolSize.Running, poolSize.Total)
+		ps.Connecting, ps.Idle, ps.Running, ps.Total)
 }
 
 // Size returns the current telemetric state of the pool.
-func (pool *Pool) Size() *PoolSize {
-	pool.getSize <- struct{}{}
-	return <-pool.repSize
+func (p *Pool) Size() *PoolSize {
+	p.getSize <- struct{}{}
+	return <-p.repSize
 }
 
-func (pool *Pool) size() *PoolSize {
+func (p *Pool) size() *PoolSize {
 	poolSize := new(PoolSize)
-	poolSize.Total = len(pool.connections)
+	poolSize.Total = len(p.connections)
 
-	for _, connection := range pool.connections {
+	for _, connection := range p.connections {
 		switch connection.Status() {
 		case CONNECTING:
 			poolSize.Connecting++

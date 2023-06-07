@@ -72,6 +72,7 @@ func (c *Config) Errorf(msg string, v ...interface{}) {
 func (c *Config) PrintConfig() {
 	c.Printf("=> Mulery Starting, pid: %d", os.Getpid())
 	c.Printf("=> Listen Address: %s", c.ListenAddr)
+	c.Printf("=> Dispatch Threads: %d", c.Dispatchers)
 	c.Printf("=> Auth URL/Header: %s / %s", c.AuthURL, c.AuthHeader)
 	c.Printf("=> Allowed Requestors: %s", strings.Join(c.Upstreams, ", "))
 	c.Printf("=> CacheDir: %s", c.CacheDir)

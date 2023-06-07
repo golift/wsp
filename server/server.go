@@ -1,10 +1,8 @@
 package server
 
 import (
-	"context"
 	"crypto/sha256"
 	"fmt"
-	"reflect"
 	"time"
 )
 
@@ -18,16 +16,26 @@ var (
 // StartDispatcher dispatches connection from available pools to client requests.
 // You need to start this in a go routine.
 func (s *Server) StartDispatcher() {
-	defer s.shutdown()
+	defer s.shutdown() // close(s.dispatcher)
 
 	const cleanInterval = 5 * time.Second
 
 	cleaner := time.NewTicker(cleanInterval)
 	defer cleaner.Stop()
 
+	for i := uint(0); i <= s.Config.Dispatchers; i++ {
+		go func() {
+			for r := range s.dispatcher {
+				s.dispatchRequest(r)
+			}
+
+			// notify shutdown() that dispatcher is closed.
+			s.getPool <- ""
+		}()
+	}
+
 	for {
 		// Runs in an infinite loop:
-		// - Receives the value from the `server.dispatcher` channel.
 		// - Checks for done channel closing.
 		// - Runs cleaner every 5 seconds.
 		select {
@@ -37,12 +45,8 @@ func (s *Server) StartDispatcher() {
 			}
 
 			s.registerPool(newPool)
-		case request, ok := <-s.dispatcher:
-			if !ok {
-				return
-			}
-
-			s.dispatchRequest(request)
+		case name := <-s.getPool:
+			s.repPool <- s.pools[name]
 		case <-cleaner.C:
 			s.cleanPools()
 		}
@@ -116,71 +120,31 @@ func (s *Server) saveMetrics(totals *PoolSize, connsPerPool map[int]int) {
 
 // dispatchRequest runs every time an http request comes into the server.
 // This finds a pool for the request, and sends the request to it.
+// So the problem here is that this function is blocking, and it will block
+// every single request if there is no available idle connection for the
+// current request it's processing. If the clients are slow and the requests
+// long this could be problematic. Start more dispatchers if you need to.
 func (s *Server) dispatchRequest(request *dispatchRequest) {
 	defer close(request.connection)
 
-	// A timeout is set for each dispatch request.
-	ctx, cancel := context.WithTimeout(context.Background(), s.Config.Timeout)
-	defer cancel()
-
-	for {
-		select {
-		case <-ctx.Done(): // The timeout elapses
-			return
-		default: // Go through
-		}
-
-		if len(s.pools) == 0 {
-			// No connection pool available
-			return
-		}
-
-		// [1]: Select a pool which has an idle connection, or one that matches the requested target.
-		connection, ok := s.findSocketConnection(request)
-		if !ok {
-			continue // a pool has been removed, try again.
-		} else if connection == nil {
-			return // the requested target has no pool
-		}
-
-		// [2]: Verify that we can use this connection and take it.
-		if connection.Take() {
-			request.connection <- connection
-			return
-		}
-	}
-}
-
-// findSocketConnection searches the pools for one that matches the request.
-// Or if no client ID is provided, then it returns a random connection.
-func (s *Server) findSocketConnection(request *dispatchRequest) (*Connection, bool) {
-	if request.client != "" {
-		if s.pools[request.client] != nil {
-			return <-s.pools[request.client].idle, true
-		}
-
-		return nil, true
+	if request.client == "" {
+		return
 	}
 
-	// Build a select statement dynamically to handle an arbitrary number of pools.
-	cases := make([]reflect.SelectCase, len(s.pools)+1)
-	idx := 0
-
-	for _, ch := range s.pools {
-		cases[idx] = reflect.SelectCase{Dir: reflect.SelectRecv, Chan: reflect.ValueOf(ch.idle)}
-		idx++
+	// Ask the main thread for this pool by ID.
+	s.getPool <- request.client
+	// Get the pool reply from the main thread.
+	pool := <-s.repPool
+	if pool == nil {
+		return
 	}
 
-	cases[len(cases)-1] = reflect.SelectCase{Dir: reflect.SelectDefault}
-
-	_, value, ok := reflect.Select(cases)
-	if !ok {
-		return nil, false // a pool has been removed, try again.
+	// this blocks until an idle connections is available.
+	connection := <-pool.idle
+	// Verify that we can use this connection and take it.
+	if connection.Take() {
+		request.connection <- connection
 	}
-
-	connection, _ := value.Interface().(*Connection)
-
-	return connection, true
 }
 
 // Register the connection into server pools.
@@ -211,6 +175,13 @@ func (s *Server) Shutdown() {
 
 func (s *Server) shutdown() {
 	close(s.dispatcher)
+
+	for i := uint(0); i <= s.Config.Dispatchers; i++ {
+		<-s.getPool // wait for dispatchers to finish.
+	}
+
+	close(s.getPool)
+	close(s.repPool)
 
 	for target, pool := range s.pools {
 		pool.Shutdown()

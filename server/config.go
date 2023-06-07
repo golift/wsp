@@ -11,6 +11,7 @@ import (
 
 // Config configures a Server.
 type Config struct {
+	Dispatchers uint          `json:"dispatchers" toml:"dispatchers" yaml:"dispatchers" xml:"dispatchers"`
 	Timeout     time.Duration `json:"timeout" toml:"timeout" yaml:"timeout" xml:"timeout"`
 	IdleTimeout time.Duration `json:"idleTimeout" toml:"idle_timeout" yaml:"idleTimeout" xml:"idle_timeout"`
 	SecretKey   string        `json:"secretKey" toml:"secret_key" yaml:"secretKey" xml:"secret_key"`
@@ -45,6 +46,8 @@ type Server struct {
 	dispatcher chan *dispatchRequest
 	metrics    *Metrics
 	closed     int
+	getPool    chan clientID
+	repPool    chan *Pool
 }
 
 // PoolConfig is a struct for transitting a new pool's data through a channel.
@@ -66,6 +69,7 @@ type dispatchRequest struct {
 // NewConfig creates a new ProxyConfig.
 func NewConfig() *Config {
 	return &Config{
+		Dispatchers: 1,
 		Timeout:     time.Second,
 		IdleTimeout: time.Minute + time.Second,
 		Logger:      &mulch.DefaultLogger{},
@@ -80,6 +84,10 @@ func NewServer(config *Config) *Server {
 		config.Logger = &mulch.DefaultLogger{}
 	}
 
+	if config.Dispatchers == 0 {
+		config.Dispatchers = 1
+	}
+
 	return &Server{
 		Config:     config,
 		upgrader:   websocket.Upgrader{},
@@ -87,5 +95,7 @@ func NewServer(config *Config) *Server {
 		dispatcher: make(chan *dispatchRequest),
 		pools:      make(map[clientID]*Pool),
 		metrics:    getMetrics(),
+		getPool:    make(chan clientID),
+		repPool:    make(chan *Pool),
 	}
 }

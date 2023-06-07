@@ -194,8 +194,9 @@ func (c *Connection) defaultHandler(req *http.Request) bool {
 		return !c.error(fmt.Sprintf("Executing tunneled request: %v", err))
 	}
 
-	bodyWriter := c.writeResponseHeaders(resp)
-	if bodyWriter == nil {
+	bodyWriter, err := c.writeResponseHeaders(resp)
+	if err != nil {
+		c.pool.client.Errorf("Making request: %v", err)
 		return false
 	}
 
@@ -210,21 +211,20 @@ func (c *Connection) defaultHandler(req *http.Request) bool {
 	return true
 }
 
-func (c *Connection) writeResponseHeaders(resp *http.Response) io.WriteCloser {
+func (c *Connection) writeResponseHeaders(resp *http.Response) (io.WriteCloser, error) {
 	// This is where we send the Internet's (http request) response back to the server.
 	err := c.ws.WriteMessage(websocket.TextMessage, mulch.SerializeHTTPResponse(resp))
 	if err != nil {
-		c.pool.client.Errorf("Writing tunnel response: %v", err)
-		return nil
+		return nil, fmt.Errorf("writing tunnel response: %w", err)
 	}
 
 	// Pipe response body because an io.ReadCloser (http.Body) doesn't get serialized (above).
 	bodyWriter, err := c.ws.NextWriter(websocket.BinaryMessage)
 	if err != nil {
-		c.pool.client.Errorf("Getting tunnel response body writer: %v", err)
+		return nil, fmt.Errorf("getting tunnel response body writer: %w", err)
 	}
 
-	return bodyWriter // may be nil.
+	return bodyWriter, nil
 }
 
 // error is called when an unrecoverable non-socket error happens in the request.

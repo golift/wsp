@@ -15,10 +15,11 @@ type req2Handler struct {
 	conn *Connection
 	body io.WriteCloser
 	mu   sync.Mutex
-	err  bool
+	err  error
 }
 
 // customHandler builds the logic to convert an http.ResponseWriter into an http.Response.
+// Returns true on success (ok), false on error.
 func (c *Connection) customHandler(req *http.Request) bool {
 	writer := &req2Handler{
 		req:  req,
@@ -29,7 +30,7 @@ func (c *Connection) customHandler(req *http.Request) bool {
 	c.pool.client.Config.Handler(writer, req)
 	writer.body.Close()
 
-	return !writer.err
+	return writer.err == nil
 }
 
 // Write satisfies the ResponseWriter interface and handles
@@ -42,11 +43,15 @@ func (r *req2Handler) Write(data []byte) (int, error) {
 		r.WriteHeader(http.StatusOK)
 	}
 
+	if r.body == nil {
+		return 0, fmt.Errorf("tunnel write failed: %w", r.err)
+	}
+
 	size, err := r.body.Write(data)
 	r.resp.ContentLength += int64(size)
 
 	if err != nil {
-		r.err = true
+		r.err = err
 		return size, fmt.Errorf("tunnel write failed: %w", err)
 	}
 
@@ -58,7 +63,7 @@ func (r *req2Handler) Write(data []byte) (int, error) {
 func (r *req2Handler) WriteHeader(statusCode int) {
 	r.resp.StatusCode = statusCode
 	r.resp.Status = http.StatusText(statusCode)
-	r.body = r.conn.writeResponseHeaders(r.resp)
+	r.body, r.err = r.conn.writeResponseHeaders(r.resp)
 }
 
 // Header returns the response headers.

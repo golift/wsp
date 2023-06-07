@@ -52,6 +52,10 @@ func NewPool(server *Server, config *PoolConfig) *Pool {
 }
 
 func (pool *Pool) shutdown() {
+	if pool.done {
+		return
+	}
+
 	pool.done = true
 
 	for _, connection := range pool.connections {
@@ -61,7 +65,6 @@ func (pool *Pool) shutdown() {
 	close(pool.askClean)
 	close(pool.askSize)
 	close(pool.getSize)
-	pool.clean()
 }
 
 func (pool *Pool) keepRunning() {
@@ -94,6 +97,7 @@ func (pool *Pool) Register(ws *websocket.Conn) {
 }
 
 // clean removes dead and idle connections from the pool.
+// Calling pool.IsEmpty is the only way to trigger this.
 func (pool *Pool) clean() {
 	var (
 		idle = 0

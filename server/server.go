@@ -20,10 +20,10 @@ var (
 func (s *Server) StartDispatcher() {
 	defer s.shutdown()
 
-	const waitTime = 5 * time.Second
+	const cleanInterval = 5 * time.Second
 
-	ticker := time.NewTicker(waitTime)
-	defer ticker.Stop()
+	cleaner := time.NewTicker(cleanInterval)
+	defer cleaner.Stop()
 
 	for {
 		// Runs in an infinite loop:
@@ -37,14 +37,14 @@ func (s *Server) StartDispatcher() {
 			}
 
 			s.registerPool(newPool)
-		case <-ticker.C:
-			s.cleanPools()
 		case request, ok := <-s.dispatcher:
 			if !ok {
 				return
 			}
 
 			s.dispatchRequest(request)
+		case <-cleaner.C:
+			s.cleanPools()
 		}
 	}
 }
@@ -64,16 +64,17 @@ func (s *Server) cleanPools() {
 		if pool.IsEmpty() {
 			s.Config.Logger.Debugf("Removing empty connection pool: %s", pool.id)
 			pool.Shutdown()
-			delete(s.pools, target)
-		} else {
-			pools[target] = pool
-			ps := pool.Size()
-			totals.Total += ps.Total
-			totals.Idle += ps.Idle
-			totals.Busy += ps.Busy
-			totals.Closed += ps.Closed
-			connsPerPool[ps.Total]++
+
+			continue
 		}
+
+		pools[target] = pool
+		ps := pool.Size()
+		totals.Total += ps.Total
+		totals.Idle += ps.Idle
+		totals.Busy += ps.Busy
+		totals.Closed += ps.Closed
+		connsPerPool[ps.Total]++
 	}
 
 	s.pools = pools
@@ -200,7 +201,7 @@ func (s *Server) registerPool(newPool *PoolConfig) {
 	s.pools[newPool.ID].Register(newPool.Sock)
 }
 
-// Shutdown stop the Server.
+// Shutdown stops the Server.
 func (s *Server) Shutdown() {
 	// closing this channel makes shutdown() run.
 	close(s.newPool)
@@ -213,6 +214,4 @@ func (s *Server) shutdown() {
 		pool.Shutdown()
 		delete(s.pools, target)
 	}
-
-	s.cleanPools()
 }

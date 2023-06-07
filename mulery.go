@@ -99,7 +99,8 @@ func (c *Config) Start() {
 	c.dispatch = server.NewServer(c.Config)
 	c.allow = MakeIPs(c.Upstreams)
 	smx := http.NewServeMux()
-	apache, _ := apachelog.New(`%h %{X-User-ID}i %{X-Environment}i %t "%r" %>s %b "%{` + c.IDHeader + `}i" "%{User-agent}i" - %{ms}Tms`)
+	apache, _ := apachelog.New(
+		`%h %{X-User-ID}i %{X-Environment}i %t "%r" %>s %b "%{` + c.IDHeader + `}i" "%{User-agent}i" - %{ms}Tms`)
 
 	smx.Handle("/metrics", apache.Wrap(c.ValidateUpstream(promhttp.Handler()), c.httpLog.Writer()))
 	smx.Handle("/register", c.dispatch.HandleRegister()) // apache log can't do websockets.

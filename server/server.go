@@ -141,19 +141,23 @@ func (s *Server) saveMetrics(totals *PoolSize, connsPerPool map[int]int) {
 func (s *Server) dispatchRequest(request *dispatchRequest) {
 	defer close(request.connection)
 
-	// Ask the main thread for this pool by ID.
-	s.getPool <- request.client
-	// Get the pool reply from the main thread.
-	pool := <-s.repPool
-	if pool == nil {
-		s.Config.Logger.Debugf("Got an empty pool for %s", request.client)
-		return // no client pool with that name.
-	}
+	for {
+		// Ask the main thread for this pool by ID.
+		s.getPool <- request.client
+		// Get the pool reply from the main thread.
+		pool := <-s.repPool
+		if pool == nil {
+			s.Config.Logger.Debugf("Got an empty pool for %s", request.client)
+			return // no client pool with that name.
+		}
 
-	// This blocks until an idle connection is available.
-	connection := <-pool.idle
-	// Verify that we can use this connection and take it.
-	request.connection <- connection.Take()
+		// This blocks until an idle connection is available.
+		// Verify that we can use this connection and take it.
+		if connection := (<-pool.idle).Take(); connection != nil {
+			request.connection <- connection
+			return
+		}
+	}
 }
 
 // Register the connection into server pools.

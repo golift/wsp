@@ -47,7 +47,7 @@ type Connection struct {
 // NewConnection returns a new Connection.
 // Each connection gets a go routine to read (wait for) messages.
 func NewConnection(pool *Pool, ws *websocket.Conn) *Connection {
-	// Initialize a new Connection
+	// Initialize a new Connection.
 	conn := &Connection{
 		pool:         pool,
 		ws:           ws,
@@ -70,7 +70,7 @@ func (c *Connection) read() {
 			c.pool.Errorf("Websocket crash recovered: %s\n%s", r, string(debug.Stack()))
 		}
 
-		c.Close("socket panic")
+		c.Close("remote hang up")
 	}()
 
 	var (

@@ -141,7 +141,7 @@ func (pool *Pool) IsEmpty() bool {
 	return (<-pool.getSize).Total == 0
 }
 
-// Shutdown closes every connection in the pool and cleans it.
+// Shutdown closes every connection in the pool and closes all channels.
 func (pool *Pool) Shutdown() {
 	close(pool.newConn)
 }

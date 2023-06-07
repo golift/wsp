@@ -44,6 +44,7 @@ type Server struct {
 	// and "dispatcher" thread reads this channel.
 	dispatcher chan *dispatchRequest
 	metrics    *Metrics
+	closed     int
 }
 
 // PoolConfig is a struct for transitting a new pool's data through a channel.

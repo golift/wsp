@@ -64,6 +64,7 @@ func (s *Server) cleanPools() {
 		if pool.IsEmpty() {
 			s.Config.Logger.Debugf("Removing empty connection pool: %s", pool.id)
 			pool.Shutdown()
+			s.closed += pool.closed
 
 			continue
 		}
@@ -77,6 +78,7 @@ func (s *Server) cleanPools() {
 		connsPerPool[ps.Total]++
 	}
 
+	totals.Closed += s.closed
 	s.pools = pools
 	s.Config.Logger.Debugf("%d pools, %d connections, %d idle, %d busy, %d closed",
 		len(s.pools), totals.Total, totals.Idle, totals.Busy, totals.Closed)

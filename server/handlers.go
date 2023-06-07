@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -20,6 +21,13 @@ func (s *Server) ProxyError(resp http.ResponseWriter, err error, regFail string)
 
 	s.Config.Logger.Errorf("%v", err)
 	http.Error(resp, err.Error(), mulch.ProxyErrorCode)
+}
+
+func (s *Server) HandleStats() http.Handler {
+	return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
+		s.getStats <- struct{}{}
+		_ = json.NewEncoder(resp).Encode(<-s.repStats)
+	})
 }
 
 // HandleRequest receives http requests for /request paths.

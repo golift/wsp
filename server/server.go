@@ -49,8 +49,22 @@ func (s *Server) StartDispatcher() {
 			s.repPool <- s.pools[name]
 		case <-cleaner.C:
 			s.cleanPools()
+		case <-s.getStats:
+			s.repStats <- s.poolStats()
 		}
 	}
+}
+
+func (s *Server) poolStats() map[clientID]*PoolSize {
+	pools := make(map[clientID]*PoolSize, len(s.pools))
+
+	for target, pool := range s.pools {
+		if pool.IsEmpty() {
+			pools[target] = pool.size()
+		}
+	}
+
+	return pools
 }
 
 // cleanPools removes empty Pools; those with no incoming client connections.
@@ -132,6 +146,7 @@ func (s *Server) dispatchRequest(request *dispatchRequest) {
 	// Get the pool reply from the main thread.
 	pool := <-s.repPool
 	if pool == nil {
+		s.Config.Logger.Debugf("Got an empty pool for %s", request.client)
 		return // no client pool with that name.
 	}
 
@@ -176,6 +191,8 @@ func (s *Server) shutdown() {
 
 	close(s.getPool)
 	close(s.repPool)
+	close(s.getStats)
+	close(s.repStats)
 
 	for target, pool := range s.pools {
 		pool.Shutdown()

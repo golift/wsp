@@ -48,6 +48,8 @@ type Server struct {
 	closed     int
 	getPool    chan clientID
 	repPool    chan *Pool
+	getStats   chan struct{}
+	repStats   chan map[clientID]*PoolSize
 }
 
 // PoolConfig is a struct for transitting a new pool's data through a channel.
@@ -97,5 +99,7 @@ func NewServer(config *Config) *Server {
 		metrics:    getMetrics(),
 		getPool:    make(chan clientID),
 		repPool:    make(chan *Pool),
+		getStats:   make(chan struct{}),
+		repStats:   make(chan map[clientID]*PoolSize),
 	}
 }

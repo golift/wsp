@@ -83,9 +83,10 @@ func (pool *Pool) keepRunning() {
 			}
 
 			if !pool.done {
+				pool.clean()
 				pool.connections = append(pool.connections, conn)
-				pool.Printf("Registering new connection from %s, tunnels: %d, max: %d",
-					pool.id, len(pool.connections), cap(pool.idle))
+				pool.Printf("Registering new connection from %s [%s], tunnels: %d, max: %d",
+					pool.id, conn.ws.RemoteAddr(), len(pool.connections), cap(pool.idle))
 			}
 		}
 	}
@@ -126,8 +127,8 @@ func (pool *Pool) cleanConnection(connection *Connection, idle int) (int, bool) 
 		// Terminate the connection if it is idle since more that IdleTimeout.
 		if age := time.Since(connection.idleSince); idle > pool.minSize && age > pool.idleTimeout {
 			// We have enough idle connections in the pool, and this one is old.
-			pool.Printf("Closing idle connection: %s, tunnels: %d , max: %d",
-				pool.id, len(pool.connections), cap(pool.idle))
+			pool.Printf("Closing idle connection: %s [%s], tunnels: %d , max: %d",
+				pool.id, connection.ws.RemoteAddr(), len(pool.connections), cap(pool.idle))
 			connection.close("idle " + age.String())
 		}
 	}

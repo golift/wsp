@@ -49,6 +49,7 @@ type Connection struct {
 func NewConnection(pool *Pool, ws *websocket.Conn) *Connection {
 	// Initialize a new Connection.
 	conn := &Connection{
+		status:       Idle,
 		pool:         pool,
 		ws:           ws,
 		nextResponse: make(chan chan io.Reader),
@@ -137,6 +138,8 @@ func (c *Connection) Take() *Connection {
 		return c
 	}
 
+	c.pool.Debugf("Tried to Take invalid connection (%s) from pool %s", c.status, c.pool.id)
+
 	return nil
 }
 
@@ -146,8 +149,11 @@ func (c *Connection) Ready() {
 	defer c.lock.Unlock()
 
 	if c.status == Closed {
+		c.pool.Debugf("Tried to Ready closed connection for pool %s", c.pool.id)
 		return
 	}
+
+	c.pool.Debugf("Releasing connection for pool %s [%s]", c.pool.id, c.ws.RemoteAddr())
 
 	c.idleSince = time.Now()
 	c.status = Idle
@@ -168,7 +174,7 @@ func (c *Connection) close(reason string) {
 		return
 	}
 
-	c.pool.Debugf("Closing connection from %s (reason: %s)", c.pool.id, reason)
+	c.pool.Debugf("Closing connection from %s [%s] (reason: %s)", c.pool.id, c.ws.RemoteAddr(), reason)
 	// Unlock a possible wild read() message.
 	close(c.nextResponse)
 	// Close the underlying TCP connection.

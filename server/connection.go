@@ -44,6 +44,19 @@ type Connection struct {
 	nextResponse chan chan io.Reader
 }
 
+func (c ConnectionStatus) String() string {
+	switch c {
+	case Idle:
+		return "idle"
+	case Busy:
+		return "busy"
+	case Closed:
+		return "closed"
+	default:
+		return "unknown"
+	}
+}
+
 // NewConnection returns a new Connection.
 // Each connection gets a go routine to read (wait for) messages.
 func NewConnection(pool *Pool, ws *websocket.Conn) *Connection {

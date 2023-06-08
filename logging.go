@@ -80,4 +80,5 @@ func (c *Config) PrintConfig() {
 	c.Printf("=> SSL Names: %s", strings.Join(c.SSLNames, ", "))
 	c.Printf("=> Log File: %s (count: %d, size: %dMB)", c.LogFile, c.LogFiles, c.LogFileMB)
 	c.Printf("=> HTTP Log: %s (count: %d, size: %dMB)", c.HTTPLog, c.HTTPLogs, c.HTTPLogMB)
+	c.Printf("=> Log Format: %s", c.ApacheLogFormat())
 }

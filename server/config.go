@@ -48,7 +48,7 @@ type Server struct {
 	closed     int
 	getPool    chan clientID
 	repPool    chan *Pool
-	getStats   chan struct{}
+	getStats   chan clientID
 	repStats   chan map[clientID]*PoolSize
 }
 
@@ -99,7 +99,7 @@ func NewServer(config *Config) *Server {
 		metrics:    getMetrics(),
 		getPool:    make(chan clientID),
 		repPool:    make(chan *Pool),
-		getStats:   make(chan struct{}),
+		getStats:   make(chan clientID),
 		repStats:   make(chan map[clientID]*PoolSize),
 	}
 }

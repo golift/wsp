@@ -27,6 +27,8 @@ type Config struct {
 	ListenAddr string `json:"listenAddr" toml:"listen_addr" yaml:"listenAddr" xml:"listen_addr"`
 	AuthURL    string `json:"authUrl" toml:"auth_url" yaml:"authUrl" xml:"auth_url"`
 	AuthHeader string `json:"authHeader" toml:"auth_header" yaml:"authHeader" xml:"auth_header"`
+	// Providing a header=>name map here will put these request headers into the apache log output.
+	LogHeaders map[string]string `json:"logHeaders" toml:"log_headers" yaml:"logHeaders" xml:"log_headers"`
 	// List of IPs or CIDRs that are allowed to make requests to clients.
 	Upstreams []string `json:"upstreams" toml:"upstreams" yaml:"upstreams" xml:"upstreams"`
 	// Optional directory where SSL certificates are stored.
@@ -90,6 +92,40 @@ func LoadConfigFile(path string) (*Config, error) {
 	return config, nil
 }
 
+func (c *Config) ApacheLogFormat() string {
+	if len(c.LogHeaders) == 0 {
+		return `%h - - %t "%r" %>s %b "%{` + c.IDHeader + `}i" "%{User-agent}i" - %{ms}Tms`
+	}
+
+	apacheFormat := `%h `
+	add := func(val string) {
+		if val == "" {
+			apacheFormat += "-"
+		} else {
+			apacheFormat += "%{" + val + "}i"
+		}
+	}
+
+	add(c.LogHeaders["uid"])
+	add(c.LogHeaders["name"])
+
+	apacheFormat += ` %t "%r" %>s %b "`
+
+	add(c.IDHeader)
+
+	apacheFormat += `" "%{User-agent}i" - %{ms}Tms`
+
+	for name, val := range c.LogHeaders {
+		if name == "uid" || name == "name" {
+			continue
+		}
+
+		apacheFormat += ` "name:%{` + val + `}i"`
+	}
+
+	return apacheFormat
+}
+
 // Start HTTP server.
 func (c *Config) Start() {
 	if c.log == nil {
@@ -99,10 +135,10 @@ func (c *Config) Start() {
 	c.dispatch = server.NewServer(c.Config)
 	c.allow = MakeIPs(c.Upstreams)
 	smx := http.NewServeMux()
-	apache, _ := apachelog.New(
-		`%h %{X-User-ID}i %{X-Environment}i %t "%r" %>s %b "%{` + c.IDHeader + `}i" "%{User-agent}i" - %{ms}Tms`)
+	apache, _ := apachelog.New(c.ApacheLogFormat())
 
 	smx.Handle("/metrics", apache.Wrap(c.ValidateUpstream(promhttp.Handler()), c.httpLog.Writer()))
+	smx.Handle("/stats", apache.Wrap(c.ValidateUpstream(http.HandlerFunc(c.dispatch.HandleStats)), c.httpLog.Writer()))
 	smx.Handle("/register", c.dispatch.HandleRegister()) // apache log can't do websockets.
 	smx.Handle("/request/", apache.Wrap(http.StripPrefix("/request",
 		c.ValidateUpstream(c.parsePath())), c.httpLog.Writer()))

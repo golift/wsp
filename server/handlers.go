@@ -23,11 +23,11 @@ func (s *Server) ProxyError(resp http.ResponseWriter, err error, regFail string)
 	http.Error(resp, err.Error(), mulch.ProxyErrorCode)
 }
 
-func (s *Server) HandleStats() http.Handler {
-	return http.HandlerFunc(func(resp http.ResponseWriter, req *http.Request) {
-		s.getStats <- struct{}{}
-		_ = json.NewEncoder(resp).Encode(<-s.repStats)
-	})
+func (s *Server) HandleStats(resp http.ResponseWriter, req *http.Request) {
+	s.getStats <- clientID(req.Header.Get(s.Config.IDHeader)) // ask for stats.
+	if err := json.NewEncoder(resp).Encode(<-s.repStats); err != nil {
+		http.Error(resp, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 // HandleRequest receives http requests for /request paths.

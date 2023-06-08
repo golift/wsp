@@ -49,13 +49,21 @@ func (s *Server) StartDispatcher() {
 			s.repPool <- s.pools[name]
 		case <-cleaner.C:
 			s.cleanPools()
-		case <-s.getStats:
-			s.repStats <- s.poolStats()
+		case clientID := <-s.getStats:
+			s.repStats <- s.poolStats(clientID)
 		}
 	}
 }
 
-func (s *Server) poolStats() map[clientID]*PoolSize {
+func (s *Server) poolStats(cID clientID) map[clientID]*PoolSize {
+	if cID != "" {
+		if s.pools[cID] == nil {
+			return map[clientID]*PoolSize{"id not found": nil}
+		}
+
+		return map[clientID]*PoolSize{cID: s.pools[cID].size()}
+	}
+
 	pools := make(map[clientID]*PoolSize, len(s.pools))
 
 	for target, pool := range s.pools {

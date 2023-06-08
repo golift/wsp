@@ -177,7 +177,7 @@ func (c *Connection) Ready() {
 
 	// Avoid blocking on the channel write below, or the server deadlocks.
 	if cap(c.pool.idle) == len(c.pool.idle) {
-		c.Close("buffer pool full, too many connections")
+		c.close("buffer pool full, too many connections")
 		return
 	}
 

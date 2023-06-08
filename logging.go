@@ -106,11 +106,9 @@ func (c *Config) ApacheLogFormat() string {
 	apacheFormat += `" "%{User-agent}i" - %{ms}Tms`
 
 	for name, val := range c.LogHeaders {
-		if name == "uid" || name == "name" {
-			continue
+		if name != "uid" && name != "name" {
+			apacheFormat += ` "` + name + `:%{` + val + `}i"`
 		}
-
-		apacheFormat += ` "name:%{` + val + `}i"`
 	}
 
 	return apacheFormat

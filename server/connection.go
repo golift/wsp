@@ -68,7 +68,7 @@ func NewConnection(pool *Pool, ws *websocket.Conn) *Connection {
 		nextResponse: make(chan chan io.Reader),
 	}
 	// Mark connection as ready for use.
-	conn.Ready()
+	conn.Give()
 	// Start listening for incoming messages over the WebSocket connection.
 	go conn.read()
 
@@ -148,36 +148,37 @@ func (c *Connection) Take() *Connection {
 	defer c.lock.Unlock()
 
 	if c.status == Idle {
-		c.pool.Debugf("Taking connection from pool %s [%s]", c.pool.id, c.ws.RemoteAddr())
+		c.pool.Debugf("Taking connection from idle buffer pool %s [%s]", c.pool.id, c.ws.RemoteAddr())
 		c.status = Busy
 
 		return c
 	}
 
-	c.pool.Debugf("Tried to Take invalid connection (%s) from pool %s", c.status, c.pool.id)
+	c.pool.Debugf("Tried to Take invalid connection (%s) from idle buffer pool %s", c.status, c.pool.id)
 
 	return nil
 }
 
-// Ready signals that this connection is ready to be used again.
+// Give a connection back to the idle buffer pool.
+// Signals that this connection is ready to be used again.
 // This gets called when an http request has completed.
-func (c *Connection) Ready() {
+func (c *Connection) Give() {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
 	if c.status == Closed {
-		c.pool.Debugf("Tried to Ready closed connection for pool %s", c.pool.id)
+		c.pool.Debugf("Tried to give closed connection to idle buffer pool %s", c.pool.id)
 		return
 	}
 
-	c.pool.Debugf("Readying connection for pool %s [%s]", c.pool.id, c.ws.RemoteAddr())
+	c.pool.Debugf("Giving connection to idle buffer pool %s [%s]", c.pool.id, c.ws.RemoteAddr())
 
 	c.idleSince = time.Now()
 	c.status = Idle
 
 	// Avoid blocking on the channel write below, or the server deadlocks.
 	if cap(c.pool.idle) == len(c.pool.idle) {
-		c.close("buffer pool full, too many connections")
+		c.close("idle buffer pool at capacity, too many connections")
 		return
 	}
 

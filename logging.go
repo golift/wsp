@@ -85,8 +85,11 @@ func (c *Config) PrintConfig() {
 
 //nolint:wsl
 func (c *Config) ApacheLogFormat() string {
-	if len(c.LogHeaders) == 0 {
-		return `%h - - %t "%r" %>s %b "%{` + c.IDHeader + `}i" "%{User-agent}i" - %{ms}Tms`
+	if idh := c.IDHeader; len(c.LogHeaders) == 0 {
+		if idh != "" {
+			idh = `"%{` + c.IDHeader + `}i"`
+		}
+		return `%h - - %t "%r" %>s %b ` + idh + ` "%{User-agent}i" - %{ms}Tms`
 	}
 
 	apacheFormat := `%h `

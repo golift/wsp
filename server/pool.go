@@ -139,6 +139,7 @@ func (pool *Pool) cleanConnection(connection *Connection, idle int) (int, bool) 
 // IsEmpty cleans the pool and return true if the pool is empty.
 func (pool *Pool) IsEmpty() bool {
 	pool.askClean <- struct{}{}
+
 	return (<-pool.getSize).Total == 0
 }
 

@@ -142,12 +142,15 @@ func (c *Connection) Status() ConnectionStatus {
 
 // Take notifies that this connection is going to be used.
 // Returns nil if the connection is busy.
+// This gets called at the beginning of an http request.
 func (c *Connection) Take() *Connection {
 	c.lock.Lock()
 	defer c.lock.Unlock()
 
 	if c.status == Idle {
+		c.pool.Debugf("Taking connection from pool %s [%s]", c.pool.id, c.ws.RemoteAddr())
 		c.status = Busy
+
 		return c
 	}
 
@@ -157,6 +160,7 @@ func (c *Connection) Take() *Connection {
 }
 
 // Ready signals that this connection is ready to be used again.
+// This gets called when an http request has completed.
 func (c *Connection) Ready() {
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -166,10 +170,17 @@ func (c *Connection) Ready() {
 		return
 	}
 
-	c.pool.Debugf("Releasing connection for pool %s [%s]", c.pool.id, c.ws.RemoteAddr())
+	c.pool.Debugf("Readying connection for pool %s [%s]", c.pool.id, c.ws.RemoteAddr())
 
 	c.idleSince = time.Now()
 	c.status = Idle
+
+	// Avoid blocking on the channel write below, or the server deadlocks.
+	if cap(c.pool.idle) == len(c.pool.idle) {
+		c.Close("buffer pool full, too many connections")
+		return
+	}
+
 	// Stick this connection into the idle buffer pool.
 	c.pool.idle <- c
 }

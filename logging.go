@@ -82,3 +82,36 @@ func (c *Config) PrintConfig() {
 	c.Printf("=> HTTP Log: %s (count: %d, size: %dMB)", c.HTTPLog, c.HTTPLogs, c.HTTPLogMB)
 	c.Printf("=> Log Format: %s", c.ApacheLogFormat())
 }
+
+//nolint:wsl
+func (c *Config) ApacheLogFormat() string {
+	if len(c.LogHeaders) == 0 {
+		return `%h - - %t "%r" %>s %b "%{` + c.IDHeader + `}i" "%{User-agent}i" - %{ms}Tms`
+	}
+
+	apacheFormat := `%h `
+	add := func(val string) {
+		if val == "" {
+			apacheFormat += "-"
+		} else {
+			apacheFormat += "%{" + val + "}i"
+		}
+	}
+
+	add(c.LogHeaders["uid"])
+	apacheFormat += " "
+	add(c.LogHeaders["name"])
+	apacheFormat += ` %t "%r" %>s %b "`
+	add(c.IDHeader)
+	apacheFormat += `" "%{User-agent}i" - %{ms}Tms`
+
+	for name, val := range c.LogHeaders {
+		if name == "uid" || name == "name" {
+			continue
+		}
+
+		apacheFormat += ` "name:%{` + val + `}i"`
+	}
+
+	return apacheFormat
+}

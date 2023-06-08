@@ -65,11 +65,8 @@ func (s *Server) poolStats(cID clientID) map[clientID]*PoolSize {
 	}
 
 	pools := make(map[clientID]*PoolSize, len(s.pools))
-
 	for target, pool := range s.pools {
-		if pool.IsEmpty() {
-			pools[target] = pool.size()
-		}
+		pools[target] = pool.size()
 	}
 
 	return pools

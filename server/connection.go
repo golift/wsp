@@ -29,6 +29,7 @@ type Connection struct {
 	status    ConnectionStatus
 	idleSince time.Time
 	lock      sync.RWMutex
+	requests  int
 	// nextResponse is the channel to wait for an HTTP response.
 	//
 	// The `read` function waits to receive the HTTP response as a separate thread reader.
@@ -148,6 +149,8 @@ func (c *Connection) Status() ConnectionStatus {
 func (c *Connection) Take() *Connection {
 	c.lock.Lock()
 	defer c.lock.Unlock()
+
+	c.requests++
 
 	if c.status == Idle {
 		c.pool.Debugf("Taking connection from idle buffer pool %s [%s]", c.pool.id, c.sock.RemoteAddr())

@@ -55,6 +55,8 @@ func (s *Server) StartDispatcher() {
 	}
 }
 
+// poolStats provides data about running pools and connections.
+// Useful for a web handler to show an operator what's happening.
 func (s *Server) poolStats(cID clientID) map[clientID]any {
 	if cID != "" {
 		if s.pools[cID] == nil {
@@ -66,12 +68,12 @@ func (s *Server) poolStats(cID clientID) map[clientID]any {
 
 	pools := make(map[clientID]any, len(s.pools))
 	for target, pool := range s.pools {
-		pools[target] = map[string]any{
-			"connected":   pool.connected,
-			"idlePool":    cap(pool.idle),
-			"maxIdlePool": len(pool.idle),
-			"client":      pool.handshake,
-			"sizes":       pool.size(),
+		pools[target] = map[string]any{ // becomes json.
+			"connected":    pool.connected,
+			"idlePoolWait": len(pool.idle),
+			"IdlePoolSize": cap(pool.idle),
+			"client":       pool.handshake,
+			"sizes":        pool.size(),
 		}
 	}
 

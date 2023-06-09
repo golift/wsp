@@ -161,11 +161,17 @@ func (pool *Pool) Shutdown() {
 
 // PoolSize is the number of connection in each state in the pool.
 type PoolSize struct {
-	Total  int                    `json:"total"`
-	Idle   int                    `json:"idle"`
-	Busy   int                    `json:"busy"`
-	Closed int                    `json:"closed"`
-	Conns  []map[string]time.Time `json:"conns"`
+	Total  int          `json:"total"`
+	Idle   int          `json:"idle"`
+	Busy   int          `json:"busy"`
+	Closed int          `json:"closed"`
+	Conns  []*ConnStats `json:"conns"`
+}
+
+type ConnStats struct {
+	Remote    string    `json:"remote"`
+	Requests  int       `json:"requests"`
+	Connected time.Time `json:"conneteed"`
 }
 
 // Size return the number of connection in each state in the pool.
@@ -179,12 +185,14 @@ func (pool *Pool) size() *PoolSize {
 	size := PoolSize{
 		Total:  len(pool.connections),
 		Closed: pool.closed,
-		Conns:  make([]map[string]time.Time, len(pool.connections)),
+		Conns:  make([]*ConnStats, len(pool.connections)),
 	}
 
 	for idx, connection := range pool.connections {
-		size.Conns[idx] = map[string]time.Time{
-			connection.sock.RemoteAddr().String(): connection.connected,
+		size.Conns[idx] = &ConnStats{
+			Remote:    connection.sock.RemoteAddr().String(),
+			Connected: connection.connected,
+			Requests:  connection.requests,
 		}
 
 		switch connection.status {

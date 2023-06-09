@@ -67,7 +67,7 @@ func (c *Connection) Connect(ctx context.Context) error {
 		ID:       c.pool.client.Config.ID,
 		Size:     c.pool.client.Config.PoolIdleSize,
 		MaxSize:  c.pool.client.Config.PoolMaxSize,
-		Compress: false,
+		Compress: "",
 	}
 
 	if err := c.ws.WriteJSON(greeting); err != nil {

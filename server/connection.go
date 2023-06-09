@@ -25,7 +25,7 @@ const (
 type Connection struct {
 	connected time.Time
 	pool      *Pool // the pool this connection belongs to.
-	ws        *websocket.Conn
+	sock      *websocket.Conn
 	status    ConnectionStatus
 	idleSince time.Time
 	lock      sync.RWMutex
@@ -60,13 +60,13 @@ func (c ConnectionStatus) String() string {
 
 // NewConnection returns a new Connection.
 // Each connection gets a go routine to read (wait for) messages.
-func NewConnection(pool *Pool, ws *websocket.Conn) *Connection {
+func NewConnection(pool *Pool, sock *websocket.Conn) *Connection {
 	// Initialize a new Connection.
 	conn := &Connection{
 		connected:    time.Now(),
 		status:       Idle,
 		pool:         pool,
-		ws:           ws,
+		sock:         sock,
 		nextResponse: make(chan chan io.Reader),
 	}
 	// Mark connection as ready for use.
@@ -108,7 +108,7 @@ func (c *Connection) read() {
 		//  - always be reading on the socket to be able to process control messages ( ping / pong / close )
 
 		// We will block here until a message is received or the ws is closed
-		if _, reader, err = c.ws.NextReader(); err != nil {
+		if _, reader, err = c.sock.NextReader(); err != nil {
 			return
 		}
 
@@ -138,6 +138,7 @@ func (c *Connection) read() {
 func (c *Connection) Status() ConnectionStatus {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
+
 	return c.status
 }
 
@@ -149,7 +150,7 @@ func (c *Connection) Take() *Connection {
 	defer c.lock.Unlock()
 
 	if c.status == Idle {
-		c.pool.Debugf("Taking connection from idle buffer pool %s [%s]", c.pool.id, c.ws.RemoteAddr())
+		c.pool.Debugf("Taking connection from idle buffer pool %s [%s]", c.pool.id, c.sock.RemoteAddr())
 		c.status = Busy
 
 		return c
@@ -172,7 +173,7 @@ func (c *Connection) Give() {
 		return
 	}
 
-	c.pool.Debugf("Giving connection to idle buffer pool %s [%s]", c.pool.id, c.ws.RemoteAddr())
+	c.pool.Debugf("Giving connection to idle buffer pool %s [%s]", c.pool.id, c.sock.RemoteAddr())
 
 	c.idleSince = time.Now()
 	c.status = Idle
@@ -200,11 +201,11 @@ func (c *Connection) close(reason string) {
 		return
 	}
 
-	c.pool.Debugf("Closing connection from %s [%s] (reason: %s)", c.pool.id, c.ws.RemoteAddr(), reason)
+	c.pool.Debugf("Closing connection from %s [%s] (reason: %s)", c.pool.id, c.sock.RemoteAddr(), reason)
 	// Unlock a possible wild read() message.
 	close(c.nextResponse)
 	// Close the underlying TCP connection.
-	c.ws.Close()
+	c.sock.Close()
 	// This must be executed *before* lock.Unlock().
 	c.status = Closed
 }

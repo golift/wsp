@@ -15,7 +15,7 @@ type Pool struct {
 	done        bool
 	minSize     int
 	idleTimeout time.Duration
-	id          clientID
+	id          string
 	connections []*Connection
 	closed      int
 	idle        chan *Connection
@@ -32,17 +32,21 @@ type clientID string
 
 // NewPool creates a new Pool, and starts one go routine per pool to keep it clean and running.
 // Each pool represents 1 client, and each client may have many connections.
-func NewPool(server *Server, client *PoolConfig) *Pool {
+func NewPool(server *Server, client *PoolConfig, altID string) *Pool {
 	// We increase the idle pool buffer size in case a client restarts.
 	// This allows the restarted client to reconnect before the previous connections get used up from the buffer.
 	// If the buffer fills, new connections are rejected.
 	const idlePoolMultiplier = 3
 
+	if altID == "" {
+		altID = client.ID
+	}
+
 	// update pool size; we add 1 so the pool may have 1 thread more than it's minimum idle.
 	pool := &Pool{
 		connected:   time.Now(),
 		handshake:   client.Handshake,
-		id:          clientID(client.ID),
+		id:          altID,
 		minSize:     client.Size + 1, // This 1 allows slightly less thread teardown/bringup.
 		idle:        make(chan *Connection, client.MaxSize*idlePoolMultiplier),
 		idleTimeout: server.Config.IdleTimeout,
@@ -94,7 +98,7 @@ func (pool *Pool) keepRunning() {
 				pool.clean()
 				pool.connections = append(pool.connections, conn)
 				pool.Printf("Registering new connection from %s [%s], tunnels: %d, max: %d",
-					pool.id, conn.ws.RemoteAddr(), len(pool.connections), cap(pool.idle))
+					pool.id, conn.sock.RemoteAddr(), len(pool.connections), cap(pool.idle))
 			}
 		}
 	}
@@ -136,7 +140,7 @@ func (pool *Pool) cleanConnection(connection *Connection, idle int) (int, bool) 
 		if age := time.Since(connection.idleSince); idle > pool.minSize && age > pool.idleTimeout {
 			// We have enough idle connections in the pool, and this one is old.
 			pool.Printf("Closing idle connection: %s [%s], tunnels: %d , max: %d",
-				pool.id, connection.ws.RemoteAddr(), len(pool.connections), cap(pool.idle))
+				pool.id, connection.sock.RemoteAddr(), len(pool.connections), cap(pool.idle))
 			connection.close("idle " + age.String())
 		}
 	}
@@ -157,11 +161,11 @@ func (pool *Pool) Shutdown() {
 
 // PoolSize is the number of connection in each state in the pool.
 type PoolSize struct {
-	Total  int
-	Idle   int
-	Busy   int
-	Closed int
-	Ages   []time.Time
+	Total  int                    `json:"total"`
+	Idle   int                    `json:"idle"`
+	Busy   int                    `json:"busy"`
+	Closed int                    `json:"closed"`
+	Conns  []map[string]time.Time `json:"conns"`
 }
 
 // Size return the number of connection in each state in the pool.
@@ -175,11 +179,13 @@ func (pool *Pool) size() *PoolSize {
 	size := PoolSize{
 		Total:  len(pool.connections),
 		Closed: pool.closed,
-		Ages:   make([]time.Time, len(pool.connections)),
+		Conns:  make([]map[string]time.Time, len(pool.connections)),
 	}
 
 	for idx, connection := range pool.connections {
-		size.Ages[idx] = connection.connected
+		size.Conns[idx] = map[string]time.Time{
+			connection.sock.RemoteAddr().String(): connection.connected,
+		}
 
 		switch connection.status {
 		case Idle:

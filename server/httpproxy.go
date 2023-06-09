@@ -79,12 +79,12 @@ func (c *Connection) sendProxyRequestBody(req *http.Request) error {
 	}
 
 	// Send the serialized HTTP request to the peer.
-	if err := c.ws.WriteMessage(websocket.TextMessage, jsonReq); err != nil {
+	if err := c.sock.WriteMessage(websocket.TextMessage, jsonReq); err != nil {
 		return fmt.Errorf("writing request: %w", err)
 	}
 
 	// Pipe the HTTP request body to the peer.
-	bodyWriter, err := c.ws.NextWriter(websocket.BinaryMessage)
+	bodyWriter, err := c.sock.NextWriter(websocket.BinaryMessage)
 	if err != nil {
 		return fmt.Errorf("request body writer: %w", err)
 	}

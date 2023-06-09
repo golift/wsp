@@ -55,24 +55,31 @@ func (s *Server) StartDispatcher() {
 	}
 }
 
-func (s *Server) poolStats(cID clientID) map[clientID]*PoolSize {
+func (s *Server) poolStats(cID clientID) map[clientID]any {
 	if cID != "" {
 		if s.pools[cID] == nil {
-			return map[clientID]*PoolSize{"id not found": nil}
+			return map[clientID]any{"id not found": nil}
 		}
 
-		return map[clientID]*PoolSize{cID: s.pools[cID].size()}
+		return map[clientID]any{cID: s.pools[cID].size()}
 	}
 
-	pools := make(map[clientID]*PoolSize, len(s.pools))
+	pools := make(map[clientID]any, len(s.pools))
 	for target, pool := range s.pools {
-		pools[target] = pool.size()
+		pools[target] = map[string]any{
+			"connected":   pool.connected,
+			"idlePool":    cap(pool.idle),
+			"maxIdlePool": len(pool.idle),
+			"client":      pool.handshake,
+			"sizes":       pool.size(),
+		}
 	}
 
 	return pools
 }
 
 // cleanPools removes empty Pools; those with no incoming client connections.
+// This also shoves pool counters into prometheus if it's enabled.
 // It is invoked every 5 sesconds and at shutdown.
 func (s *Server) cleanPools() {
 	if len(s.pools) == 0 {

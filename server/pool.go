@@ -10,6 +10,7 @@ import (
 // Pool handles all connections from the peer.
 // Each pool is unique by it's clientID.
 type Pool struct {
+	connected   time.Time
 	handshake   *mulch.Handshake
 	done        bool
 	minSize     int
@@ -39,6 +40,7 @@ func NewPool(server *Server, client *PoolConfig) *Pool {
 
 	// update pool size; we add 1 so the pool may have 1 thread more than it's minimum idle.
 	pool := &Pool{
+		connected:   time.Now(),
 		handshake:   client.Handshake,
 		id:          clientID(client.ID),
 		minSize:     client.Size + 1, // This 1 allows slightly less thread teardown/bringup.
@@ -145,7 +147,6 @@ func (pool *Pool) cleanConnection(connection *Connection, idle int) (int, bool) 
 // IsEmpty cleans the pool and return true if the pool is empty.
 func (pool *Pool) IsEmpty() bool {
 	pool.askClean <- struct{}{}
-
 	return (<-pool.getSize).Total == 0
 }
 
@@ -160,6 +161,7 @@ type PoolSize struct {
 	Idle   int
 	Busy   int
 	Closed int
+	Ages   []time.Time
 }
 
 // Size return the number of connection in each state in the pool.
@@ -170,12 +172,15 @@ func (pool *Pool) Size() *PoolSize {
 
 // size return the number of connection in each state in the pool. not thread safe.
 func (pool *Pool) size() *PoolSize {
-	size := &PoolSize{
+	size := PoolSize{
 		Total:  len(pool.connections),
 		Closed: pool.closed,
+		Ages:   make([]time.Time, len(pool.connections)),
 	}
 
-	for _, connection := range pool.connections {
+	for idx, connection := range pool.connections {
+		size.Ages[idx] = connection.connected
+
 		switch connection.status {
 		case Idle:
 			size.Idle++
@@ -184,5 +189,5 @@ func (pool *Pool) size() *PoolSize {
 		}
 	}
 
-	return size
+	return &size
 }

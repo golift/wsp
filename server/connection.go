@@ -23,6 +23,7 @@ const (
 // Connection manages a single websocket connection from the peer.
 // Supports multiple connections from a single peer at the same time (a pool).
 type Connection struct {
+	connected time.Time
 	pool      *Pool // the pool this connection belongs to.
 	ws        *websocket.Conn
 	status    ConnectionStatus
@@ -62,6 +63,7 @@ func (c ConnectionStatus) String() string {
 func NewConnection(pool *Pool, ws *websocket.Conn) *Connection {
 	// Initialize a new Connection.
 	conn := &Connection{
+		connected:    time.Now(),
 		status:       Idle,
 		pool:         pool,
 		ws:           ws,
@@ -136,7 +138,6 @@ func (c *Connection) read() {
 func (c *Connection) Status() ConnectionStatus {
 	c.lock.RLock()
 	defer c.lock.RUnlock()
-
 	return c.status
 }
 

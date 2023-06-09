@@ -11,8 +11,12 @@ import (
 )
 
 // ProxyError log error and return a HTTP 526 error with the message.
-func (s *Server) ProxyError(resp http.ResponseWriter, err error, regFail string) {
-	s.Config.Logger.Errorf("%v", err)
+func (s *Server) ProxyError(resp http.ResponseWriter, req *http.Request, err error, regFail string) {
+	if regFail != "" {
+		s.Config.Logger.Errorf("[%s] Registration failed: %v", req.RemoteAddr, err)
+	} else {
+		s.Config.Logger.Errorf("[%s] Request failed: %v", req.RemoteAddr, err)
+	}
 
 	if regFail != "" && s.metrics != nil {
 		s.metrics.Regs.WithLabelValues(regFail).Add(1)
@@ -42,19 +46,19 @@ func (s *Server) HandleRequest(name string) http.Handler {
 			var err error
 			// r.URL is used in proxyRequest().
 			if req.URL, err = url.Parse(dstURL); err != nil {
-				s.ProxyError(resp, fmt.Errorf("parsing X-PROXY-DESTINATION header: %w", err), "")
+				s.ProxyError(resp, req, fmt.Errorf("parsing X-PROXY-DESTINATION header: %w", err), "")
 				return
 			}
 		}
 
 		if len(s.pools) == 0 {
-			s.ProxyError(resp, fmt.Errorf("%w: no pools registered", ErrNoProxyTarget), "")
+			s.ProxyError(resp, req, fmt.Errorf("%w: no pools registered", ErrNoProxyTarget), "")
 			return
 		}
 
 		clientID, err := s.getClientID(req)
 		if err != nil {
-			s.ProxyError(resp, err, "")
+			s.ProxyError(resp, req, err, "")
 			return
 		}
 
@@ -74,7 +78,7 @@ func (s *Server) HandleRequest(name string) http.Handler {
 		connection := <-request.connection
 		if connection == nil {
 			// Dispatcher is `nil` which means the target has no pool.
-			s.ProxyError(resp, fmt.Errorf("%w: %s", ErrNoProxyTarget, request.client), "")
+			s.ProxyError(resp, req, fmt.Errorf("%w: %s", ErrNoProxyTarget, request.client), "")
 			return
 		}
 
@@ -84,7 +88,7 @@ func (s *Server) HandleRequest(name string) http.Handler {
 			connection.Close("proxy error")
 			// Try to return an error to the client.
 			// This might fail if response headers have already been sent.
-			s.ProxyError(resp, fmt.Errorf("tunneling failure, connection closed: %w", err), "")
+			s.ProxyError(resp, req, fmt.Errorf("tunneling failure, connection closed: %w", err), "")
 		}
 	}, name)
 }
@@ -96,14 +100,14 @@ func (s *Server) HandleRegister() http.Handler {
 		// 0. Validate the provided secret key.
 		secret, err := s.validateKey(req.Context(), req.Header)
 		if err != nil {
-			s.ProxyError(resp, err, "keyFailed")
+			s.ProxyError(resp, req, err, "keyFailed")
 			return
 		}
 
 		// 1. Upgrade a received HTTP request to a WebSocket connection.
 		sock, err := s.upgrader.Upgrade(resp, req, nil)
 		if err != nil {
-			s.ProxyError(resp, fmt.Errorf("http upgrade failed: %w", err), "upgradeFailed")
+			s.ProxyError(resp, req, fmt.Errorf("http upgrade failed: %w", err), "upgradeFailed")
 			return
 		}
 
@@ -111,7 +115,7 @@ func (s *Server) HandleRegister() http.Handler {
 		// The first message should contain the remote Proxy name and pool size.
 		var greeting mulch.Handshake
 		if err := sock.ReadJSON(&greeting); err != nil {
-			s.ProxyError(resp, fmt.Errorf("unable to read greeting message: %w", err), "greetingFailed")
+			s.ProxyError(resp, req, fmt.Errorf("unable to read greeting message: %w", err), "greetingFailed")
 			sock.Close()
 			return
 		}

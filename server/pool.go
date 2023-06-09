@@ -32,7 +32,7 @@ type clientID string
 // NewPool creates a new Pool, and starts one go routine per pool to keep it clean and running.
 // Each pool represents 1 client, and each client may have many connections.
 func NewPool(server *Server, client *PoolConfig) *Pool {
-	// We double the idle pool buffer size in case a client restarts.
+	// We increase the idle pool buffer size in case a client restarts.
 	// This allows the restarted client to reconnect before the previous connections get used up from the buffer.
 	const idlePoolMultiplier = 3
 

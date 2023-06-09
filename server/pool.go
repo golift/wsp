@@ -34,6 +34,7 @@ type clientID string
 func NewPool(server *Server, client *PoolConfig) *Pool {
 	// We increase the idle pool buffer size in case a client restarts.
 	// This allows the restarted client to reconnect before the previous connections get used up from the buffer.
+	// If the buffer fills, new connections are rejected.
 	const idlePoolMultiplier = 3
 
 	// update pool size; we add 1 so the pool may have 1 thread more than it's minimum idle.

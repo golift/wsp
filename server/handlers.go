@@ -12,12 +12,15 @@ import (
 
 // ProxyError log error and return a HTTP 526 error with the message.
 func (s *Server) ProxyError(resp http.ResponseWriter, err error, regFail string) {
+	s.Config.Logger.Errorf("%v", err)
+
 	if regFail != "" && s.metrics != nil {
 		s.metrics.Regs.WithLabelValues(regFail).Add(1)
 	}
 
-	s.Config.Logger.Errorf("%v", err)
-	http.Error(resp, err.Error(), mulch.ProxyErrorCode)
+	if regFail == "" { // cannot send http responses to a hijacked connection.
+		http.Error(resp, err.Error(), mulch.ProxyErrorCode)
+	}
 }
 
 func (s *Server) HandleStats(resp http.ResponseWriter, req *http.Request) {

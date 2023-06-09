@@ -18,15 +18,30 @@ const (
 
 // Config is the required data to initialize a client proxy connection.
 type Config struct {
-	ID            string
-	Targets       []string
-	PoolIdleSize  int
-	PoolMaxSize   int
-	SecretKey     string
+	// Name is an optional client identifier. Only used in logs.
+	Name string
+	// ID is a required client identifier. All connections are pooled using the ID,
+	// so make this unique if you don't want this client pooled with another.
+	ID string
+	// Websocket URLs this client shall connect to.
+	Targets []string
+	// Minimum count of idle connections to maintain at all times.
+	PoolIdleSize int
+	// Maximum websocket connections to keep per target.
+	PoolMaxSize int
+	// SecretKey is passed as a header to the server to "authenticate".
+	// The target servers must accept this value.
+	SecretKey string
+	// How often to reap dead connections from the target pools.
+	// This also controls how often to re-try connections to the targets.
 	CleanInterval time.Duration
-	Backoff       time.Duration
-	MaxBackoff    time.Duration
-	BackoffReset  time.Duration
+	// How many seconds to backoff on every connection attempt.
+	Backoff time.Duration
+	// Maximum backoff length.
+	MaxBackoff time.Duration
+	// What to reset the backoff to when max is hit.
+	// Set this to max to stay at max.
+	BackoffReset time.Duration
 	// Handler is an optional custom handler for all proxied requests.
 	// Leaving this nil makes all requests use an empty http.Client.
 	Handler func(http.ResponseWriter, *http.Request)

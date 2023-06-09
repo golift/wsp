@@ -54,11 +54,9 @@ type Server struct {
 
 // PoolConfig is a struct for transitting a new pool's data through a channel.
 type PoolConfig struct {
-	MinConns int
-	MaxConns int
-	ID       clientID
-	secret   string
-	Sock     *websocket.Conn
+	*mulch.Handshake
+	Sock   *websocket.Conn
+	secret string
 }
 
 // dispatchRequest is used to request a proxy connection from the dispatcher.

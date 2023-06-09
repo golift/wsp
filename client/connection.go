@@ -58,19 +58,21 @@ func (c *Connection) Connect(ctx context.Context) error {
 		http.Header{mulch.SecretKeyHeader: {c.pool.secretKey}},
 	)
 	if err != nil {
-		return fmt.Errorf("tcp tunnel dialer failure: %w", err)
+		return fmt.Errorf("tcp dialer failure: %w", err)
 	}
 
-	// Send the greeting message with proxy id and wanted pool size.
-	greeting := fmt.Sprintf("%s_%d_%d",
-		c.pool.client.Config.ID,
-		c.pool.client.Config.PoolIdleSize,
-		c.pool.client.Config.PoolMaxSize,
-	)
+	// Send the greeting message with proxy id and desired pool size.
+	greeting := &mulch.Handshake{
+		Name:     c.pool.client.Name,
+		ID:       c.pool.client.Config.ID,
+		Size:     c.pool.client.Config.PoolIdleSize,
+		MaxSize:  c.pool.client.Config.PoolMaxSize,
+		Compress: false,
+	}
 
-	if err := c.ws.WriteMessage(websocket.TextMessage, []byte(greeting)); err != nil {
+	if err := c.ws.WriteJSON(greeting); err != nil {
 		c.pool.Remove(c)
-		return fmt.Errorf("tunnel greeting failure: %w", err)
+		return fmt.Errorf("greeting failure: %w", err)
 	}
 
 	// We are connected to the server, now start a go routine that waits for incoming server requests.

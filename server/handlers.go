@@ -6,10 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"strconv"
-	"strings"
 
-	"github.com/gorilla/websocket"
 	"golift.io/mulery/mulch"
 )
 
@@ -109,16 +106,15 @@ func (s *Server) HandleRegister() http.Handler {
 
 		// 2. Wait for a greeting message from the peer and parse it.
 		// The first message should contain the remote Proxy name and pool size.
-		poolConfig, err := parseGreeting(sock)
-		if err != nil {
-			s.ProxyError(resp, err, "greetingFailed")
+		var greeting mulch.Handshake
+		if err := sock.ReadJSON(&greeting); err != nil {
+			s.ProxyError(resp, fmt.Errorf("unable to read greeting message: %w", err), "greetingFailed")
 			sock.Close()
 			return
 		}
 
 		// 3. Register the connection into server pools.
-		poolConfig.secret = secret
-		s.newPool <- poolConfig
+		s.newPool <- &PoolConfig{&greeting, sock, secret}
 
 		if s.metrics != nil {
 			s.metrics.Regs.WithLabelValues("success").Add(1)
@@ -159,30 +155,4 @@ func (s *Server) validateKey(ctx context.Context, header http.Header) (string, e
 
 	// Do not return the "configured" secret key.
 	return "", nil
-}
-
-// 2. Wait for a greeting message from the peer and parse it.
-func parseGreeting(sock *websocket.Conn) (*PoolConfig, error) {
-	_, greeting, err := sock.ReadMessage()
-	if err != nil {
-		return nil, fmt.Errorf("unable to read greeting message: %w", err)
-	}
-
-	// Parse the greeting message.
-	split := strings.Split(string(greeting), "_")
-	if len(split) != 3 { //nolint:gomnd
-		return nil, fmt.Errorf("%w: greeting separator count is wrong", ErrInvalidData)
-	}
-
-	size, err := strconv.Atoi(split[1])
-	if err != nil {
-		return nil, fmt.Errorf("unable to parse greeting message: %w", err)
-	}
-
-	max, err := strconv.Atoi(split[2])
-	if err != nil {
-		return nil, fmt.Errorf("unable to parse greeting message: %w", err)
-	}
-
-	return &PoolConfig{size, max, clientID(split[0]), "", sock}, nil
 }

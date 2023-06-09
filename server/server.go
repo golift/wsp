@@ -174,15 +174,16 @@ func (s *Server) registerPool(newPool *PoolConfig) {
 		// As promised, if a custom key validator returns a secret(string),
 		// hash that with the client id to create a new client id.
 		// This is custom logic you probably don't want, so don't return a string from your key validator.
-		newPool.ID = clientID(fmt.Sprintf("%x", hash.Sum(nil)))
+		newPool.ID = fmt.Sprintf("%x", hash.Sum(nil))
 	}
 
-	if pool, ok := s.pools[newPool.ID]; !ok || pool == nil {
-		s.pools[newPool.ID] = NewPool(s, newPool)
+	clientID := clientID(newPool.ID)
+	if pool, ok := s.pools[clientID]; !ok || pool == nil {
+		s.pools[clientID] = NewPool(s, newPool)
 	}
 
 	// Add the WebSocket connection to the pool
-	s.pools[newPool.ID].Register(newPool.Sock)
+	s.pools[clientID].Register(newPool.Sock)
 }
 
 // Shutdown stops the Server.

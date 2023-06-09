@@ -10,6 +10,7 @@ import (
 // Pool handles all connections from the peer.
 // Each pool is unique by it's clientID.
 type Pool struct {
+	handshake   *mulch.Handshake
 	done        bool
 	minSize     int
 	idleTimeout time.Duration
@@ -30,17 +31,17 @@ type clientID string
 
 // NewPool creates a new Pool, and starts one go routine per pool to keep it clean and running.
 // Each pool represents 1 client, and each client may have many connections.
-func NewPool(server *Server, config *PoolConfig) *Pool {
+func NewPool(server *Server, client *PoolConfig) *Pool {
 	// We double the idle pool buffer size in case a client restarts.
 	// This allows the restarted client to reconnect before the previous connections get used up from the buffer.
 	const idlePoolMultiplier = 3
 
-	// update pool size; we add 1 so the pool may have 1 thread more than it's minimum active.
-	// This 1 allows slightly less thread teardown/bringup.
+	// update pool size; we add 1 so the pool may have 1 thread more than it's minimum idle.
 	pool := &Pool{
-		id:          config.ID,
-		minSize:     config.MinConns + 1,
-		idle:        make(chan *Connection, config.MaxConns*idlePoolMultiplier),
+		handshake:   client.Handshake,
+		id:          clientID(client.ID),
+		minSize:     client.Size + 1, // This 1 allows slightly less thread teardown/bringup.
+		idle:        make(chan *Connection, client.MaxSize*idlePoolMultiplier),
 		idleTimeout: server.Config.IdleTimeout,
 		newConn:     make(chan *Connection),
 		askClean:    make(chan struct{}),

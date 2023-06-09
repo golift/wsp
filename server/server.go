@@ -71,7 +71,7 @@ func (s *Server) poolStats(cID clientID) map[clientID]any {
 		pools[target] = map[string]any{ // becomes json.
 			"connected":    pool.connected,
 			"idlePoolWait": len(pool.idle),
-			"IdlePoolSize": cap(pool.idle),
+			"idlePoolSize": cap(pool.idle),
 			"client":       pool.handshake,
 			"sizes":        pool.size(),
 		}

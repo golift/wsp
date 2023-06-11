@@ -28,9 +28,9 @@ func (s *Server) ProxyError(resp http.ResponseWriter, req *http.Request, err err
 }
 
 func (s *Server) HandleStats(resp http.ResponseWriter, req *http.Request) {
-	s.getStats <- clientID(req.Header.Get(s.Config.IDHeader)) // ask for stats.
-	if err := json.NewEncoder(resp).Encode(<-s.repStats); err != nil {
-		http.Error(resp, err.Error(), http.StatusInternalServerError)
+	s.getStats <- clientID(req.Header.Get(s.Config.IDHeader))          // ask for stats.
+	if err := json.NewEncoder(resp).Encode(<-s.repStats); err != nil { // send stats
+		http.Error(resp, err.Error(), http.StatusInternalServerError) // oops, error.
 	}
 }
 
@@ -110,6 +110,8 @@ func (s *Server) HandleRegister() http.Handler {
 			s.ProxyError(resp, req, fmt.Errorf("http upgrade failed: %w", err), "upgradeFailed")
 			return
 		}
+
+		sock.EnableWriteCompression(true)
 
 		// 2. Wait for a greeting message from the peer and parse it.
 		// The first message should contain the remote Proxy name and pool size.

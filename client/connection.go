@@ -61,6 +61,8 @@ func (c *Connection) Connect(ctx context.Context) error {
 		return fmt.Errorf("tcp dialer failure: %w", err)
 	}
 
+	c.ws.EnableWriteCompression(true)
+
 	// Send the greeting message with proxy id and desired pool size.
 	greeting := &mulch.Handshake{
 		Name:     c.pool.client.Name,

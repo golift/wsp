@@ -93,8 +93,11 @@ func NewClient(config *Config) *Client {
 	return &Client{
 		Config: config,
 		client: &http.Client{},
-		dialer: &websocket.Dialer{},
-		pools:  make(map[string]*Pool),
+		dialer: &websocket.Dialer{
+			EnableCompression: true,
+			HandshakeTimeout:  mulch.HandshakeTimeout,
+		},
+		pools: make(map[string]*Pool),
 	}
 }
 

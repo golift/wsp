@@ -89,8 +89,11 @@ func NewServer(config *Config) *Server {
 	}
 
 	return &Server{
-		Config:     config,
-		upgrader:   websocket.Upgrader{},
+		Config: config,
+		upgrader: websocket.Upgrader{
+			EnableCompression: true,
+			HandshakeTimeout:  mulch.HandshakeTimeout,
+		},
 		newPool:    make(chan *PoolConfig, defaultPoolBuffer),
 		dispatcher: make(chan *dispatchRequest),
 		pools:      make(map[clientID]*Pool),

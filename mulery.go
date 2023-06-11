@@ -150,12 +150,12 @@ func (c *Config) parsePath() http.HandlerFunc {
 
 	return func(resp http.ResponseWriter, req *http.Request) {
 		switch path := strings.SplitN(req.URL.Path, "/", maxPathSegments); {
-		case len(path) == 0:
+		case len(path) < 2:
 			c.dispatch.HandleRequest(req.URL.Path).ServeHTTP(resp, req)
-		case len(path) < 4 || !strings.HasPrefix(req.URL.Path, "/api/triggers"):
-			c.dispatch.HandleRequest(strings.Join(path, "/")).ServeHTTP(resp, req)
+		case path[1] != "api":
+			c.dispatch.HandleRequest("/non/api").ServeHTTP(resp, req)
 		default:
-			c.dispatch.HandleRequest(strings.Join(path[:3], "/")).ServeHTTP(resp, req)
+			c.dispatch.HandleRequest(strings.Join(path[:2], "/")).ServeHTTP(resp, req)
 		}
 	}
 }

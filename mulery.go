@@ -146,16 +146,21 @@ func (c *Config) Start() {
 // We only use this tunnel to talk to 1 app, so the api paths we hit are bounded.
 // This method chops the end off to avoid unbounded items in the URI.
 func (c *Config) parsePath() http.HandlerFunc {
-	const maxPathSegments = 4
-
+	//nolint:gomnd // Examples:
+	//   /api/radarr/1/get/<random>
+	//   /api/triggers/command/<random>
 	return func(resp http.ResponseWriter, req *http.Request) {
-		switch path := strings.SplitN(req.URL.Path, "/", maxPathSegments); {
-		case len(path) < 2:
-			c.dispatch.HandleRequest(req.URL.Path).ServeHTTP(resp, req)
+		switch path := strings.SplitN(req.URL.Path, "/", 6); {
+		case len(path) <= 1:
+			c.dispatch.HandleRequest("/").ServeHTTP(resp, req)
 		case path[1] != "api":
 			c.dispatch.HandleRequest("/non/api").ServeHTTP(resp, req)
+		case len(path) <= 3:
+			c.dispatch.HandleRequest(req.URL.Path).ServeHTTP(resp, req)
+		case path[2] == "triggers" || len(path) == 4:
+			c.dispatch.HandleRequest(strings.Join(path[:4], "/")).ServeHTTP(resp, req)
 		default:
-			c.dispatch.HandleRequest(strings.Join(path[:2], "/")).ServeHTTP(resp, req)
+			c.dispatch.HandleRequest(strings.Join(path[:5], "/")).ServeHTTP(resp, req)
 		}
 	}
 }

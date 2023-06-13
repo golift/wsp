@@ -158,8 +158,11 @@ func (c *Config) parsePath() http.HandlerFunc {
 			c.dispatch.HandleRequest("/non/api").ServeHTTP(resp, req)
 		case len(path) <= 3:
 			c.dispatch.HandleRequest(req.URL.Path).ServeHTTP(resp, req)
-		case path[2] == "triggers" || len(path) == 4:
+		case path[2] == "trigger" || len(path) == 4:
 			c.dispatch.HandleRequest(strings.Join(path[:4], "/")).ServeHTTP(resp, req)
+		case path[3] == "2" || path[3] == "3" || path[3] == "4" || path[3] == "5":
+			path[3] = "1"
+			fallthrough
 		default:
 			c.dispatch.HandleRequest(strings.Join(path[:5], "/")).ServeHTTP(resp, req)
 		}

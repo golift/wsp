@@ -112,6 +112,7 @@ func (c *Config) Start() {
 
 	var tlsConfig *tls.Config
 
+	// Create TLS certificates if a Cache dir, CF Token and SSL Names are provided.
 	if c.CacheDir != "" && len(c.SSLNames) > 0 && c.CFToken != "" {
 		certmagic.DefaultACME.Email = c.Email
 		certmagic.DefaultACME.Agreed = true

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"compress/flate"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -112,6 +113,7 @@ func (s *Server) HandleRegister() http.Handler {
 		}
 
 		sock.EnableWriteCompression(true)
+		_ = sock.SetCompressionLevel(flate.BestSpeed)
 
 		// 2. Wait for a greeting message from the peer and parse it.
 		// The first message should contain the remote Proxy name and pool size.

@@ -1,6 +1,7 @@
 package client
 
 import (
+	"compress/flate"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -62,6 +63,7 @@ func (c *Connection) Connect(ctx context.Context) error {
 	}
 
 	c.ws.EnableWriteCompression(true)
+	_ = c.ws.SetCompressionLevel(flate.BestCompression)
 
 	// Send the greeting message with proxy id and desired pool size.
 	greeting := &mulch.Handshake{

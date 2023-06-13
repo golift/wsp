@@ -67,11 +67,12 @@ func (c *Connection) Connect(ctx context.Context) error {
 
 	// Send the greeting message with proxy id and desired pool size.
 	greeting := &mulch.Handshake{
-		Name:     c.pool.client.Name,
-		ID:       c.pool.client.Config.ID,
-		Size:     c.pool.client.Config.PoolIdleSize,
-		MaxSize:  c.pool.client.Config.PoolMaxSize,
-		Compress: "",
+		Name:      c.pool.client.Name,
+		ID:        c.pool.client.Config.ID,
+		Size:      c.pool.client.Config.PoolIdleSize,
+		MaxSize:   c.pool.client.Config.PoolMaxSize,
+		Compress:  "",
+		ClientIDs: c.pool.client.ClientIDs,
 	}
 
 	if err := c.ws.WriteJSON(greeting); err != nil {

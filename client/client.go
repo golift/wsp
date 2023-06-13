@@ -23,6 +23,10 @@ type Config struct {
 	// ID is a required client identifier. All connections are pooled using the ID,
 	// so make this unique if you don't want this client pooled with another.
 	ID string
+	// ClientIDs is simply saved with the connection data and available in stats.
+	// It may be empty and is not directly used by this library.
+	// It's for you to identify your clients with your own ID(s).
+	ClientIDs []interface{}
 	// Websocket URLs this client shall connect to.
 	Targets []string
 	// Minimum count of idle connections to maintain at all times.

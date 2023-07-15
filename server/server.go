@@ -156,30 +156,30 @@ func (s *Server) dispatchRequest(request *dispatchRequest) {
 	defer close(request.connection)
 
 	for {
-		s.Config.Logger.Debugf("dispatchRequest: ask %s", request.client)
+		s.Config.Logger.Debugf("dispatchRequest: 1 ask %s", request.client)
 		// Ask the main thread for this pool by ID.
 		s.getPool <- request.client
-		s.Config.Logger.Debugf("dispatchRequest: wait %s", request.client)
+		s.Config.Logger.Debugf("dispatchRequest: 2 wait %s", request.client)
 		// Get the pool reply from the main thread.
 		pool := <-s.repPool
-		s.Config.Logger.Debugf("dispatchRequest: got %s", request.client)
+		s.Config.Logger.Debugf("dispatchRequest: 3 got %s", request.client)
 
 		if pool == nil {
-			s.Config.Logger.Debugf("Got an empty pool for %s", request.client)
+			s.Config.Logger.Debugf("dispatchRequest: 4 empty pool %s", request.client)
 			return // no client pool with that name.
 		}
 
-		s.Config.Logger.Debugf("dispatchRequest: take %s", request.client)
+		s.Config.Logger.Debugf("dispatchRequest: 4 take %s", request.client)
 		// This blocks until an idle connection is available.
 		// Verify that we can use this connection and take it.
 		if connection := (<-pool.idle).Take(); connection != nil {
 			request.connection <- connection
-			s.Config.Logger.Debugf("dispatchRequest: done %s", request.client)
+			s.Config.Logger.Debugf("dispatchRequest: 5 done %s", request.client)
 
 			return
 		}
 
-		s.Config.Logger.Debugf("dispatchRequest: restart %s", request.client)
+		s.Config.Logger.Debugf("dispatchRequest: 5 restart %s", request.client)
 	}
 }
 

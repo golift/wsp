@@ -64,7 +64,11 @@ func NewPool(server *Server, client *PoolConfig, altID string) *Pool {
 }
 
 func (pool *Pool) shutdown() {
+	pool.Debugf("Shutting down pool: %v", pool.id)
+	defer pool.Debugf("Done shutting down pool: %v", pool.id)
+
 	if pool.done {
+		pool.Debugf("Pool was already shut down? %v", pool.id)
 		return
 	}
 
@@ -157,6 +161,7 @@ func (pool *Pool) IsEmpty() bool {
 // Shutdown closes every connection in the pool and closes all channels.
 func (pool *Pool) Shutdown() {
 	close(pool.newConn)
+	pool.Debugf("called pool Shutdown: %s", pool.id)
 }
 
 // PoolSize is the number of connection in each state in the pool.

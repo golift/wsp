@@ -182,7 +182,7 @@ func (c *Connection) Give() {
 	c.status = Idle
 
 	// Avoid blocking on the channel write below, or the server deadlocks.
-	if cap(c.pool.idle) == len(c.pool.idle) {
+	if len(c.pool.idle) >= cap(c.pool.idle) {
 		c.close("idle buffer pool at capacity, too many connections")
 		return
 	}

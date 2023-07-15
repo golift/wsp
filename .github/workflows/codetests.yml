@@ -26,6 +26,7 @@ jobs:
         with:
           check_hidden: true
           skip: .git,go.sum,go.mod
+          ignore_words_list: flate
 
   golangci:
     strategy:

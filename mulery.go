@@ -146,7 +146,7 @@ func (c *Config) Start() {
 // we can see response times of our requests per api endpoint.
 // We only use this tunnel to talk to 1 app, so the api paths we hit are bounded.
 // This method chops the end off to avoid unbounded items in the URI.
-func (c *Config) parsePath() http.HandlerFunc {
+func (c *Config) parsePath() http.HandlerFunc { //nolint:cyclop
 	//nolint:gomnd // Examples:
 	//   /api/radarr/1/get/<random>
 	//   /api/triggers/command/<random>

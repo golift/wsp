@@ -175,6 +175,7 @@ func (s *Server) dispatchRequest(request *dispatchRequest) {
 		if connection := (<-pool.idle).Take(); connection != nil {
 			request.connection <- connection
 			s.Config.Logger.Debugf("dispatchRequest: done %s", request.client)
+
 			return
 		}
 

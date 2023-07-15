@@ -74,7 +74,7 @@ func (c *Config) PrintConfig() {
 	c.Printf("=> Listen Address: %s", c.ListenAddr)
 	c.Printf("=> Dispatch Threads: %d", c.Dispatchers)
 	c.Printf("=> Auth URL/Header: %s / %s", c.AuthURL, c.AuthHeader)
-	c.Printf("=> Allowed Requestors: %s", strings.Join(c.Upstreams, ", "))
+	c.Printf("=> Allowed Requesters: %s", strings.Join(c.Upstreams, ", "))
 	c.Printf("=> CacheDir: %s", c.CacheDir)
 	c.Printf("=> Email / Token: %s / %v", c.Email, len(c.CFToken) > 0)
 	c.Printf("=> SSL Names: %s", strings.Join(c.SSLNames, ", "))

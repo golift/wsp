@@ -81,6 +81,7 @@ func (pool *Pool) shutdown() {
 	close(pool.askClean)
 	close(pool.askSize)
 	close(pool.getSize)
+	close(pool.idle)
 }
 
 func (pool *Pool) keepRunning() {

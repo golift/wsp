@@ -169,10 +169,16 @@ func (s *Server) dispatchRequest(request *dispatchRequest) {
 			return // no client pool with that name.
 		}
 
-		s.Config.Logger.Debugf("dispatchRequest: 4 take %s", request.client)
 		// This blocks until an idle connection is available.
+		conn := <-pool.idle
+		if conn == nil {
+			s.Config.Logger.Debugf("dispatchRequest: 4 empty conn channel %s", request.client)
+			return // pool was shutdown as request came in.
+		}
+
+		s.Config.Logger.Debugf("dispatchRequest: 4 take %s", request.client)
 		// Verify that we can use this connection and take it.
-		if connection := (<-pool.idle).Take(); connection != nil {
+		if connection := conn.Take(); connection != nil {
 			request.connection <- connection
 			s.Config.Logger.Debugf("dispatchRequest: 5 done %s", request.client)
 

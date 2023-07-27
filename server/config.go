@@ -43,13 +43,19 @@ type Server struct {
 	// Through dispatcher channel it communicates between "http server" thread and "dispatcher" thread.
 	// "server" thread sends the value to this channel when accepting requests in the endpoint /requests,
 	// and "dispatcher" thread reads this channel.
-	dispatcher chan *dispatchRequest
-	metrics    *Metrics
-	closed     int
-	getPool    chan clientID
-	repPool    chan *Pool
-	getStats   chan clientID
-	repStats   chan map[clientID]any
+	dispatcher  chan *dispatchRequest
+	metrics     *Metrics
+	closed      int // pools that have been closed.
+	threadCount map[uint]uint64
+	getPool     chan *getPoolRequest
+	repPool     chan *Pool
+	getStats    chan clientID
+	repStats    chan *ServerStats
+}
+
+type ServerStats struct {
+	Pools   map[clientID]any `json:"pools"`
+	Threads map[uint]uint64  `json:"threads"`
 }
 
 // PoolConfig is a struct for transitting a new pool's data through a channel.
@@ -64,6 +70,11 @@ type PoolConfig struct {
 type dispatchRequest struct {
 	connection chan *Connection
 	client     clientID
+}
+
+type getPoolRequest struct {
+	threadID uint
+	clientID clientID
 }
 
 // NewConfig creates a new ProxyConfig.
@@ -94,13 +105,14 @@ func NewServer(config *Config) *Server {
 			EnableCompression: true,
 			HandshakeTimeout:  mulch.HandshakeTimeout,
 		},
-		newPool:    make(chan *PoolConfig, defaultPoolBuffer),
-		dispatcher: make(chan *dispatchRequest),
-		pools:      make(map[clientID]*Pool),
-		metrics:    getMetrics(),
-		getPool:    make(chan clientID),
-		repPool:    make(chan *Pool),
-		getStats:   make(chan clientID),
-		repStats:   make(chan map[clientID]any),
+		newPool:     make(chan *PoolConfig, defaultPoolBuffer),
+		dispatcher:  make(chan *dispatchRequest),
+		pools:       make(map[clientID]*Pool),
+		threadCount: make(map[uint]uint64),
+		metrics:     getMetrics(),
+		getPool:     make(chan *getPoolRequest),
+		repPool:     make(chan *Pool),
+		getStats:    make(chan clientID),
+		repStats:    make(chan *ServerStats),
 	}
 }

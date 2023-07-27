@@ -23,15 +23,15 @@ func (s *Server) StartDispatcher() {
 	cleaner := time.NewTicker(cleanInterval)
 	defer cleaner.Stop()
 
-	for i := s.Config.Dispatchers; i > 0; i-- {
-		go func() {
+	for threadID := s.Config.Dispatchers; threadID > 0; threadID-- {
+		go func(threadID uint) {
 			for r := range s.dispatcher {
-				s.dispatchRequest(r)
+				s.dispatchRequest(r, threadID)
 			}
 
 			// notify shutdown() that dispatcher is closed.
-			s.getPool <- ""
-		}()
+			s.getPool <- nil
+		}(threadID)
 	}
 
 	for {
@@ -45,12 +45,13 @@ func (s *Server) StartDispatcher() {
 			}
 
 			s.registerPool(newPool)
-		case name := <-s.getPool:
-			s.repPool <- s.pools[name]
+		case req := <-s.getPool:
+			s.threadCount[req.threadID]++
+			s.repPool <- s.pools[req.clientID]
 		case <-cleaner.C:
 			s.cleanPools()
 		case clientID := <-s.getStats:
-			s.repStats <- s.poolStats(clientID)
+			s.repStats <- &ServerStats{Pools: s.poolStats(clientID), Threads: s.threadStats()}
 		}
 	}
 }
@@ -78,6 +79,16 @@ func (s *Server) poolStats(cID clientID) map[clientID]any {
 	}
 
 	return pools
+}
+
+func (s *Server) threadStats() map[uint]uint64 {
+	threads := make(map[uint]uint64, len(s.threadCount))
+
+	for k, v := range s.threadCount {
+		threads[k] = v
+	}
+
+	return threads
 }
 
 // cleanPools removes empty Pools; those with no incoming client connections.
@@ -152,40 +163,40 @@ func (s *Server) saveMetrics(totals *PoolSize, connsPerPool map[int]int) {
 // every single request if there is no available idle connection for the
 // current request it's processing. If the clients are slow and the requests
 // long this could be problematic. Start more dispatchers if you need to.
-func (s *Server) dispatchRequest(request *dispatchRequest) {
+func (s *Server) dispatchRequest(request *dispatchRequest, threadID uint) {
 	defer close(request.connection)
 
 	for {
-		s.Config.Logger.Debugf("dispatchRequest: 1 ask %s", request.client)
+		s.Config.Logger.Debugf("[%s] dispatchRequest: 1 ask %s", threadID, request.client)
 		// Ask the main thread for this pool by ID.
-		s.getPool <- request.client
-		s.Config.Logger.Debugf("dispatchRequest: 2 wait %s", request.client)
+		s.getPool <- &getPoolRequest{clientID: request.client, threadID: threadID}
+		s.Config.Logger.Debugf("[%s] dispatchRequest: 2 wait %s", threadID, request.client)
 		// Get the pool reply from the main thread.
 		pool := <-s.repPool
-		s.Config.Logger.Debugf("dispatchRequest: 3 got %s", request.client)
+		s.Config.Logger.Debugf("[%s] dispatchRequest: 3 got %s", threadID, request.client)
 
 		if pool == nil {
-			s.Config.Logger.Debugf("dispatchRequest: 4 empty pool %s", request.client)
+			s.Config.Logger.Debugf("[%s] dispatchRequest: 4 empty pool %s", threadID, request.client)
 			return // no client pool with that name.
 		}
 
 		// This blocks until an idle connection is available.
 		conn := <-pool.idle
 		if conn == nil {
-			s.Config.Logger.Debugf("dispatchRequest: 4 empty conn channel %s", request.client)
+			s.Config.Logger.Debugf("[%s] dispatchRequest: 4 empty conn channel %s", threadID, request.client)
 			return // pool was shutdown as request came in.
 		}
 
-		s.Config.Logger.Debugf("dispatchRequest: 4 take %s", request.client)
+		s.Config.Logger.Debugf("[%s] dispatchRequest: 4 take %s", threadID, request.client)
 		// Verify that we can use this connection and take it.
 		if connection := conn.Take(); connection != nil {
 			request.connection <- connection
-			s.Config.Logger.Debugf("dispatchRequest: 5 done %s", request.client)
+			s.Config.Logger.Debugf("[%s] dispatchRequest: 5 done %s", threadID, request.client)
 
 			return
 		}
 
-		s.Config.Logger.Debugf("dispatchRequest: 5 restart %s", request.client)
+		s.Config.Logger.Debugf("[%s] dispatchRequest: 5 restart %s", threadID, request.client)
 	}
 }
 

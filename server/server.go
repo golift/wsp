@@ -167,36 +167,36 @@ func (s *Server) dispatchRequest(request *dispatchRequest, threadID uint) {
 	defer close(request.connection)
 
 	for {
-		s.Config.Logger.Debugf("[%s] dispatchRequest: 1 ask %s", threadID, request.client)
+		s.Config.Logger.Debugf("[%d] dispatchRequest: 1 ask %s", threadID, request.client)
 		// Ask the main thread for this pool by ID.
 		s.getPool <- &getPoolRequest{clientID: request.client, threadID: threadID}
-		s.Config.Logger.Debugf("[%s] dispatchRequest: 2 wait %s", threadID, request.client)
+		s.Config.Logger.Debugf("[%d] dispatchRequest: 2 wait %s", threadID, request.client)
 		// Get the pool reply from the main thread.
 		pool := <-s.repPool
-		s.Config.Logger.Debugf("[%s] dispatchRequest: 3 got %s", threadID, request.client)
+		s.Config.Logger.Debugf("[%d] dispatchRequest: 3 got %s", threadID, request.client)
 
 		if pool == nil {
-			s.Config.Logger.Debugf("[%s] dispatchRequest: 4 empty pool %s", threadID, request.client)
+			s.Config.Logger.Debugf("[%d] dispatchRequest: 4 empty pool %s", threadID, request.client)
 			return // no client pool with that name.
 		}
 
 		// This blocks until an idle connection is available.
 		conn := <-pool.idle
 		if conn == nil {
-			s.Config.Logger.Debugf("[%s] dispatchRequest: 4 empty conn channel %s", threadID, request.client)
+			s.Config.Logger.Debugf("[%d] dispatchRequest: 4 empty conn channel %s", threadID, request.client)
 			return // pool was shutdown as request came in.
 		}
 
-		s.Config.Logger.Debugf("[%s] dispatchRequest: 4 take %s", threadID, request.client)
+		s.Config.Logger.Debugf("[%d] dispatchRequest: 4 take %s", threadID, request.client)
 		// Verify that we can use this connection and take it.
 		if connection := conn.Take(); connection != nil {
 			request.connection <- connection
-			s.Config.Logger.Debugf("[%s] dispatchRequest: 5 done %s", threadID, request.client)
+			s.Config.Logger.Debugf("[%d] dispatchRequest: 5 done %s", threadID, request.client)
 
 			return
 		}
 
-		s.Config.Logger.Debugf("[%s] dispatchRequest: 5 restart %s", threadID, request.client)
+		s.Config.Logger.Debugf("[%d] dispatchRequest: 5 restart %s", threadID, request.client)
 	}
 }
 

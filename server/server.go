@@ -13,7 +13,7 @@ var (
 	ErrInvalidData   = fmt.Errorf("invalid data received")
 )
 
-// StartDispatcher dispatches connection from available pools to client requests.
+// StartDispatcher dispatches connections from available pools to client requests.
 // You need to start this in a go routine.
 func (s *Server) StartDispatcher() {
 	defer s.shutdown() // close(s.dispatcher)
@@ -51,7 +51,10 @@ func (s *Server) StartDispatcher() {
 		case <-cleaner.C:
 			s.cleanPools()
 		case clientID := <-s.getStats:
-			s.repStats <- &ServerStats{Pools: s.poolStats(clientID), Threads: s.threadStats()}
+			s.repStats <- &Stats{
+				Pools:   s.poolStats(clientID),
+				Threads: s.threadStats(),
+			}
 		}
 	}
 }
@@ -82,13 +85,13 @@ func (s *Server) poolStats(cID clientID) map[clientID]any {
 }
 
 func (s *Server) threadStats() map[uint]uint64 {
-	threads := make(map[uint]uint64, len(s.threadCount))
+	threadCount := make(map[uint]uint64, len(s.threadCount))
 
 	for k, v := range s.threadCount {
-		threads[k] = v
+		threadCount[k] = v
 	}
 
-	return threads
+	return threadCount
 }
 
 // cleanPools removes empty Pools; those with no incoming client connections.

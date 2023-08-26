@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"io"
 	"runtime/debug"
 	"sync"
@@ -159,7 +160,7 @@ func (c *Connection) Take() *Connection {
 		return c
 	}
 
-	c.pool.Debugf("Tried to Take invalid connection (%s) from idle buffer pool %s", c.status, c.pool.id)
+	c.pool.Errorf("Tried to Take invalid connection (%s) from idle buffer pool %s", c.status, c.pool.id)
 
 	return nil
 }
@@ -172,7 +173,7 @@ func (c *Connection) Give() {
 	defer c.lock.Unlock()
 
 	if c.status == Closed {
-		c.pool.Debugf("Tried to give closed connection to idle buffer pool %s", c.pool.id)
+		c.pool.Errorf("Tried to Give closed connection to idle buffer pool %s", c.pool.id)
 		return
 	}
 
@@ -182,8 +183,9 @@ func (c *Connection) Give() {
 	c.status = Idle
 
 	// Avoid blocking on the channel write below, or the server deadlocks.
-	if len(c.pool.idle) >= cap(c.pool.idle) {
-		c.close("idle buffer pool at capacity, too many connections")
+	j := cap(c.pool.idle)
+	if i := len(c.pool.idle); i >= j {
+		c.close(fmt.Sprintf("idle buffer pool %d at capacity %d, too many connections", i, j))
 		return
 	}
 
@@ -204,7 +206,7 @@ func (c *Connection) close(reason string) {
 		return
 	}
 
-	c.pool.Debugf("Closing connection from %s [%s] (reason: %s)", c.pool.id, c.sock.RemoteAddr(), reason)
+	c.pool.Printf("Closing connection from %s [%s] (reason: %s)", c.pool.id, c.sock.RemoteAddr(), reason)
 	// Unlock a possible wild read() message.
 	close(c.nextResponse)
 	// Close the underlying TCP connection.

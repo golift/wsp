@@ -86,7 +86,7 @@ func (s *Server) HandleRequest(name string) http.Handler {
 		// Send the incoming http request to the peer through the WebSocket connection.
 		if err := connection.proxyRequest(resp, req); err != nil {
 			// An error occurred throw the connection away.
-			connection.Close("proxy error")
+			connection.Close(fmt.Sprintf("proxy error: %v", err))
 			// Try to return an error to the client.
 			// This might fail if response headers have already been sent.
 			s.ProxyError(resp, req, fmt.Errorf("tunneling failure, connection closed: %w", err), "")

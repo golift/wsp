@@ -1,8 +1,6 @@
 Mulery
 ======
 
-**This project is under development and not yet ready for consumption.**
-
 The idea behind what's being built here is a server that can handle thousands of simultaneous client connections.
 The server is essentially a command and control center for the clients. A simple server is provided, as a library
 and a binary. The server is only useful with the client library that is not provided as a binary. You need to instrument

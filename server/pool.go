@@ -12,7 +12,6 @@ import (
 type Pool struct {
 	connected   time.Time
 	handshake   *mulch.Handshake
-	done        bool
 	minSize     int
 	idleTimeout time.Duration
 	id          string
@@ -33,22 +32,17 @@ type clientID string
 // NewPool creates a new Pool, and starts one go routine per pool to keep it clean and running.
 // Each pool represents 1 client, and each client may have many connections.
 func NewPool(server *Server, client *PoolConfig, altID string) *Pool {
-	// We increase the idle pool buffer size in case a client restarts.
-	// This allows the restarted client to reconnect before the previous connections get used up from the buffer.
-	// If the buffer fills, new connections are rejected.
-	const idlePoolMultiplier = 3
-
 	if altID == "" {
 		altID = client.ID
 	}
 
-	// update pool size; we add 1 so the pool may have 1 thread more than it's minimum idle.
+	// update pool size; we add 1 so the pool may have 1 threads more than it's minimum idle.
 	pool := &Pool{
 		connected:   time.Now(),
 		handshake:   client.Handshake,
 		id:          altID,
 		minSize:     client.Size + 1, // This 1 allows slightly less thread teardown/bringup.
-		idle:        make(chan *Connection, client.MaxSize*idlePoolMultiplier),
+		idle:        make(chan *Connection, client.MaxSize+1),
 		idleTimeout: server.Config.IdleTimeout,
 		newConn:     make(chan *Connection),
 		askClean:    make(chan struct{}),
@@ -66,13 +60,6 @@ func NewPool(server *Server, client *PoolConfig, altID string) *Pool {
 func (pool *Pool) shutdown() {
 	pool.Debugf("Shutting down pool: %v", pool.id)
 	defer pool.Debugf("Done shutting down pool: %v", pool.id)
-
-	if pool.done {
-		pool.Debugf("Pool was already shut down? %v", pool.id)
-		return
-	}
-
-	pool.done = true
 
 	for _, connection := range pool.connections {
 		connection.Close("shutdown")
@@ -99,18 +86,17 @@ func (pool *Pool) keepRunning() {
 				return
 			}
 
-			if !pool.done {
-				pool.clean()
-				pool.connections = append(pool.connections, conn)
-				pool.Printf("Registering new connection from %s [%s], tunnels: %d, max: %d",
-					pool.id, conn.sock.RemoteAddr(), len(pool.connections), cap(pool.idle))
-			}
+			pool.clean()
+			pool.connections = append(pool.connections, conn)
+			pool.Printf("Registering new connection from %s [%s], tunnels: %d, idle: %d/%d",
+				pool.id, conn.sock.RemoteAddr(), len(pool.connections), len(pool.idle), cap(pool.idle))
 		}
 	}
 }
 
 // Register creates a new Connection and adds it to the pool.
 func (pool *Pool) Register(ws *websocket.Conn) {
+	pool.cleanIdleChan()
 	pool.newConn <- NewConnection(pool, ws)
 }
 
@@ -134,6 +120,16 @@ func (pool *Pool) clean() {
 	pool.connections = save
 }
 
+// cleanIdleChan removes all non-idle connections from the idle channel buffer.
+// This should run every time a new connection registers; to clean out old dead connections.
+func (pool *Pool) cleanIdleChan() {
+	for i := len(pool.idle); i > 0; i-- {
+		if conn := <-pool.idle; conn.Status() == Idle {
+			pool.idle <- conn
+		}
+	}
+}
+
 func (pool *Pool) cleanConnection(connection *Connection, idle int) (int, bool) {
 	// Ensure a busy connection is never closed.
 	connection.lock.Lock()
@@ -141,11 +137,11 @@ func (pool *Pool) cleanConnection(connection *Connection, idle int) (int, bool) 
 
 	if connection.status == Idle {
 		idle++
-		// Terminate the connection if it is idle since more that IdleTimeout.
+		// Terminate the connection if it is idle since more than IdleTimeout.
 		if age := time.Since(connection.idleSince); idle > pool.minSize && age > pool.idleTimeout {
 			// We have enough idle connections in the pool, and this one is old.
-			pool.Printf("Closing idle connection: %s [%s], tunnels: %d , max: %d",
-				pool.id, connection.sock.RemoteAddr(), len(pool.connections), cap(pool.idle))
+			pool.Printf("Closing idle connection: %s [%s], tunnels: %d , idle: %d/%d",
+				pool.id, connection.sock.RemoteAddr(), len(pool.connections), len(pool.idle), cap(pool.idle))
 			connection.close("idle " + age.String())
 		}
 	}

@@ -160,7 +160,8 @@ func (c *Connection) Take() *Connection {
 		return c
 	}
 
-	c.pool.Errorf("Tried to Take invalid connection (%s) from idle buffer pool %s", c.status, c.pool.id)
+	// This happens once in a while, and is not a real error condition.
+	c.pool.Errorf("Tried to Take() invalid connection (%s) from idle buffer pool %s", c.status, c.pool.id)
 
 	return nil
 }
@@ -173,7 +174,8 @@ func (c *Connection) Give() {
 	defer c.lock.Unlock()
 
 	if c.status == Closed {
-		c.pool.Errorf("Tried to Give closed connection to idle buffer pool %s", c.pool.id)
+		// This happening, is actually a bug...
+		c.pool.Errorf("Tried to Give() closed connection to idle buffer pool %s", c.pool.id)
 		return
 	}
 
@@ -206,7 +208,8 @@ func (c *Connection) close(reason string) {
 		return
 	}
 
-	c.pool.Printf("Closing connection from %s [%s] (reason: %s)", c.pool.id, c.sock.RemoteAddr(), reason)
+	c.pool.Printf("Closing connection from %s [%s], connected: %s, requests: %d, reason: %s",
+		c.pool.id, c.sock.RemoteAddr(), time.Since(c.connected).Round(time.Second), c.requests, reason)
 	// Unlock a possible wild read() message.
 	close(c.nextResponse)
 	// Close the underlying TCP connection.

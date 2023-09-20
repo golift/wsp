@@ -76,7 +76,7 @@ func (s *Server) poolStats(cID clientID) map[clientID]any {
 	for target, pool := range s.pools {
 		pools[target] = map[string]any{ // becomes json.
 			"connected":    pool.connected,
-			"duration":     time.Since(pool.connected).Round(time.Second),
+			"duration":     time.Since(pool.connected).Round(time.Second).String(),
 			"idlePoolWait": len(pool.idle),
 			"idlePoolSize": cap(pool.idle),
 			"client":       pool.handshake,

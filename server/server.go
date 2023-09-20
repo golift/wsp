@@ -146,7 +146,7 @@ func (s *Server) saveMetrics(totals *PoolSize, connsPerPool map[int]int) {
 	}
 
 	for conns := 1; conns <= max; conns++ {
-		label := fmt.Sprint(conns)
+		label := fmt.Sprintf("%02d", conns)
 		if conns >= max {
 			label += "+"
 		}

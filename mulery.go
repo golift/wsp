@@ -91,6 +91,9 @@ func LoadConfigFile(path string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse configuration: %w", err)
 	}
 
+	// We put this here, so we can print the parsed IPs on startup.
+	config.allow = MakeIPs(config.Upstreams)
+
 	return config, nil
 }
 
@@ -101,7 +104,6 @@ func (c *Config) Start() {
 	}
 
 	c.dispatch = server.NewServer(c.Config)
-	c.allow = MakeIPs(c.Upstreams)
 	smx := http.NewServeMux()
 	apache, _ := apachelog.New(c.ApacheLogFormat())
 

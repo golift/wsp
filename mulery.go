@@ -109,7 +109,8 @@ func (c *Config) Start() {
 
 	smx.Handle("/metrics", apache.Wrap(c.ValidateUpstream(promhttp.Handler()), c.httpLog.Writer()))
 	smx.Handle("/stats", apache.Wrap(c.ValidateUpstream(http.HandlerFunc(c.dispatch.HandleStats)), c.httpLog.Writer()))
-	smx.Handle("/register", c.dispatch.HandleRegister()) // apache log can't do websockets.
+	smx.Handle("/register", c.dispatch.HandleRegister())                                   // apache log can't do websockets.
+	smx.Handle("/request", apache.Wrap(http.HandlerFunc(c.HandleAll), c.httpLog.Writer())) // handleAll
 	smx.Handle("/request/", apache.Wrap(http.StripPrefix("/request",
 		c.ValidateUpstream(c.parsePath())), c.httpLog.Writer()))
 	smx.Handle("/health", apache.Wrap(http.HandlerFunc(c.HandleOK), c.httpLog.Writer()))
@@ -147,7 +148,7 @@ func (c *Config) Start() {
 }
 
 // parsePath is an assumption built for notifiarr.
-// This uses a portihon of the path as a label so
+// This uses a portion of the path as a label so
 // we can see response times of our requests per api endpoint.
 // We only use this tunnel to talk to 1 app, so the api paths we hit are bounded.
 // This method chops the end off to avoid unbounded items in the URI.

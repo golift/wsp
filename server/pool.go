@@ -20,7 +20,7 @@ type Pool struct {
 	idle        chan *Connection
 	newConn     chan *Connection
 	askClean    chan struct{}
-	askSize     chan struct{}
+	askSize     chan time.Time
 	getSize     chan *PoolSize
 	mulch.Logger
 	metrics *Metrics
@@ -46,7 +46,7 @@ func NewPool(server *Server, client *PoolConfig, altID string) *Pool {
 		idleTimeout: server.Config.IdleTimeout,
 		newConn:     make(chan *Connection),
 		askClean:    make(chan struct{}),
-		askSize:     make(chan struct{}),
+		askSize:     make(chan time.Time),
 		getSize:     make(chan *PoolSize),
 		Logger:      server.Config.Logger,
 		metrics:     server.metrics,
@@ -79,8 +79,8 @@ func (pool *Pool) keepRunning() {
 		case <-pool.askClean:
 			pool.clean()
 			pool.getSize <- &PoolSize{Total: len(pool.connections)} // shoehorn.
-		case <-pool.askSize:
-			pool.getSize <- pool.size()
+		case now := <-pool.askSize:
+			pool.getSize <- pool.size(now)
 		case conn, ok := <-pool.newConn:
 			if !ok {
 				return
@@ -174,16 +174,18 @@ type ConnStats struct {
 	Remote    string    `json:"remote"`
 	Requests  int       `json:"requests"`
 	Connected time.Time `json:"conneteed"`
+	Idle      string    `json:"idle"`
 }
 
 // Size return the number of connection in each state in the pool.
-func (pool *Pool) Size() *PoolSize {
-	pool.askSize <- struct{}{}
+// Uses `now` to calculate how long a connection has been established.
+func (pool *Pool) Size(now time.Time) *PoolSize {
+	pool.askSize <- now
 	return <-pool.getSize
 }
 
 // size return the number of connection in each state in the pool. not thread safe.
-func (pool *Pool) size() *PoolSize {
+func (pool *Pool) size(now time.Time) *PoolSize {
 	size := PoolSize{
 		Total:  len(pool.connections),
 		Closed: pool.closed,
@@ -195,6 +197,7 @@ func (pool *Pool) size() *PoolSize {
 			Remote:    connection.sock.RemoteAddr().String(),
 			Connected: connection.connected,
 			Requests:  connection.requests,
+			Idle:      now.Sub(connection.idleSince).Round(time.Second).String(),
 		}
 
 		switch connection.status {

@@ -1,10 +1,11 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "forkProcessing": "enabled",
   "extends": [
     "config:base",
+    "dependencyDashboard",
     "default:automergeDigest"
   ],
+  "forkProcessing": "enabled",
   "packageRules": [
     {
       "matchDatasources": ["go", "github-releases", "github-tags"],

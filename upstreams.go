@@ -73,18 +73,17 @@ func (n *AllowedIPs) Contains(ip string) bool {
 	return <-n.allow
 }
 
-// MakeIPs turns a list of CIDR strings (or plain IPs) into a list of net.IPNet.
+// MakeIPs turns a list of CIDR strings, IPs or dns hostnames into a list of net.IPNet.
 // This "allowed" list is later used to check incoming IPs from web requests.
+// Starts a go routine that does periodic dns lookups for hostnames in the upstreams list.
 func MakeIPs(upstreams []string) *AllowedIPs {
 	allowed := &AllowedIPs{
-		askIP: make(chan string),
-		allow: make(chan bool),
 		input: make([]string, len(upstreams)),
 		nets:  make([]*net.IPNet, len(upstreams)),
 	}
 	allowed.parseAndLookup(upstreams)
 
-	go allowed.watch()
+	go allowed.Start()
 
 	return allowed
 }
@@ -103,22 +102,35 @@ func (n *AllowedIPs) parseAndLookup(upstreams []string) {
 
 		if _, ipnet, err := net.ParseCIDR(ipAddr); err == nil {
 			n.nets[idx] = ipnet
-			continue
+			continue // it's an ip, no dns lookup needed.
 		}
 
 		iplist, err := net.LookupHost(n.input[idx])
-		if err == nil && len(iplist) > 0 {
-			if _, ipnet, err := net.ParseCIDR(iplist[0] + "/32"); err == nil {
-				n.nets[idx] = ipnet
-				continue
-			}
+		if err != nil || len(iplist) < 1 {
+			continue // keep what we had if the lookup is empty.
+		}
+
+		// if err != nil, keep what we had, or "nothing" if it never recovers.
+		if _, ipnet, err := net.ParseCIDR(iplist[0] + "/32"); err == nil {
+			n.nets[idx] = ipnet // update what we had with new lookup.
 		}
 	}
 }
 
-func (n *AllowedIPs) watch() {
+func (n *AllowedIPs) Start() {
+	if n.askIP != nil {
+		panic("AllowedIPs already running!")
+	}
+
+	n.askIP = make(chan string)
+	n.allow = make(chan bool)
 	ticker := time.NewTicker(dnsRefreshInterval)
-	defer ticker.Stop()
+
+	defer func() {
+		n.askIP = nil
+		close(n.allow) // signal finished.
+		ticker.Stop()
+	}()
 
 	for {
 		select {
@@ -142,4 +154,11 @@ func (n *AllowedIPs) contains(askIP string) bool {
 	}
 
 	return false
+}
+
+// Stop the running allow IP routine.
+func (n *AllowedIPs) Stop() {
+	close(n.askIP)
+	<-n.allow
+	n.allow = nil
 }

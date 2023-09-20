@@ -126,8 +126,8 @@ func (s *Server) cleanPools() {
 
 	totals.Closed += s.closed
 	s.pools = pools
-	s.Config.Logger.Debugf("%d pools, %d connections, %d idle, %d busy, %d closed, cpp: %v",
-		len(s.pools), totals.Total, totals.Idle, totals.Busy, totals.Closed, connsPerPool)
+	s.Config.Logger.Debugf("%d pools, %d connections, %d idle, %d busy, %d closed",
+		len(s.pools), totals.Total, totals.Idle, totals.Busy, totals.Closed)
 	s.saveMetrics(totals, connsPerPool)
 }
 
@@ -136,31 +136,22 @@ func (s *Server) saveMetrics(totals *PoolSize, connsPerPool map[int]int) {
 		return
 	}
 
-	// we have to limit the label values to something, and this may even be too many.
-	const max = 50
-
-	var highest int
+	// we have to limit the label values to something...
+	const max = 20
 
 	for conns, pools := range connsPerPool {
-		if conns > highest {
-			highest = conns
-		}
-
 		if conns > max {
 			connsPerPool[max] += pools
 		}
 	}
 
-	if highest > max {
-		highest = max
-	}
-
-	for ; highest > 0; highest-- {
-		if highest < max {
-			s.metrics.PoolConns.WithLabelValues(fmt.Sprint(highest)).Set(float64(connsPerPool[highest]))
-		} else if highest == max {
-			s.metrics.PoolConns.WithLabelValues(fmt.Sprint(highest, "+")).Set(float64(connsPerPool[highest]))
+	for conns := 1; conns <= max; conns++ {
+		label := fmt.Sprint(conns)
+		if conns >= max {
+			label += "+"
 		}
+
+		s.metrics.PoolConns.WithLabelValues(label).Set(float64(connsPerPool[conns]))
 	}
 
 	s.metrics.Conns.WithLabelValues("total").Set(float64(totals.Total))

@@ -126,8 +126,8 @@ func (s *Server) cleanPools() {
 
 	totals.Closed += s.closed
 	s.pools = pools
-	s.Config.Logger.Debugf("%d pools, %d connections, %d idle, %d busy, %d closed",
-		len(s.pools), totals.Total, totals.Idle, totals.Busy, totals.Closed)
+	s.Config.Logger.Debugf("%d pools, %d connections, %d idle, %d busy, %d closed, cpp: %v",
+		len(s.pools), totals.Total, totals.Idle, totals.Busy, totals.Closed, connsPerPool)
 	s.saveMetrics(totals, connsPerPool)
 }
 

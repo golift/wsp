@@ -118,11 +118,17 @@ func (n *AllowedIPs) parseAndLookup(upstreams []string) {
 
 func (n *AllowedIPs) watch() {
 	ticker := time.NewTicker(dnsRefreshInterval)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ticker.C:
 			n.parseAndLookup(n.input) // update input w/ input.
-		case askIP := <-n.askIP:
+		case askIP, ok := <-n.askIP:
+			if !ok {
+				return
+			}
+
 			for i := range n.nets {
 				if n.nets[i] != nil && n.nets[i].Contains(net.ParseIP(askIP)) {
 					n.allow <- true

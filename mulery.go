@@ -51,11 +51,13 @@ type Config struct {
 	HTTPLogs int `json:"httpLogs" toml:"http_logs" yaml:"httpLogs" xml:"http_logs"`
 	// Rotate the http log file when it reaches this many megabytes.
 	HTTPLogMB int64 `json:"httpLogMb" toml:"http_log_mb" yaml:"httpLogMb" xml:"http_log_mb"`
+	// RedirectURL is where to send a request to any unknown path. Unauthorized is returned otherwise.
+	RedirectURL string `json:"redirectUrl" toml:"redirect_url" yaml:"redirectUrl" xml:"redirect_url"`
 	*server.Config
 	dispatch *server.Server
 	client   *http.Client
 	server   *http.Server
-	allow    AllowedIPs
+	allow    *AllowedIPs
 	log      *log.Logger
 	httpLog  *log.Logger
 }
@@ -108,6 +110,7 @@ func (c *Config) Start() {
 	smx.Handle("/register", c.dispatch.HandleRegister()) // apache log can't do websockets.
 	smx.Handle("/request/", apache.Wrap(http.StripPrefix("/request",
 		c.ValidateUpstream(c.parsePath())), c.httpLog.Writer()))
+	smx.Handle("/health", apache.Wrap(http.HandlerFunc(c.HandleOK), c.httpLog.Writer()))
 	smx.Handle("/", apache.Wrap(http.HandlerFunc(c.HandleAll), c.httpLog.Writer()))
 
 	var tlsConfig *tls.Config

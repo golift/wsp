@@ -46,7 +46,7 @@ var _ = fmt.Stringer(&AllowedIPs{})
 
 // String turns a list of allowedIPs into a printable masterpiece.
 func (n *AllowedIPs) String() string {
-	if len(n.nets) < 1 {
+	if n == nil || len(n.nets) < 1 {
 		return "(none)"
 	}
 
@@ -129,14 +129,17 @@ func (n *AllowedIPs) watch() {
 				return
 			}
 
-			for i := range n.nets {
-				if n.nets[i] != nil && n.nets[i].Contains(net.ParseIP(askIP)) {
-					n.allow <- true
-					continue
-				}
-			}
-
-			n.allow <- false
+			n.allow <- n.contains(askIP)
 		}
 	}
+}
+
+func (n *AllowedIPs) contains(askIP string) bool {
+	for i := range n.nets {
+		if n.nets[i] != nil && n.nets[i].Contains(net.ParseIP(askIP)) {
+			return true
+		}
+	}
+
+	return false
 }

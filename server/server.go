@@ -136,8 +136,8 @@ func (s *Server) saveMetrics(totals *PoolSize, connsPerPool map[int]int) {
 		return
 	}
 
-	// we have to limit the label values to something, and this may even be too many.
-	const max = 50
+	// we have to limit the label values to something...
+	const max = 20
 
 	for conns, pools := range connsPerPool {
 		if conns > max {
@@ -145,12 +145,13 @@ func (s *Server) saveMetrics(totals *PoolSize, connsPerPool map[int]int) {
 		}
 	}
 
-	for conns, pools := range connsPerPool {
-		if conns < max {
-			s.metrics.PoolConns.WithLabelValues(fmt.Sprint(conns)).Set(float64(pools))
-		} else if conns == max {
-			s.metrics.PoolConns.WithLabelValues(fmt.Sprint(conns, "+")).Set(float64(pools))
+	for conns := 1; conns <= max; conns++ {
+		label := fmt.Sprintf("%02d", conns)
+		if conns >= max {
+			label += "+"
 		}
+
+		s.metrics.PoolConns.WithLabelValues(label).Set(float64(connsPerPool[conns]))
 	}
 
 	s.metrics.Conns.WithLabelValues("total").Set(float64(totals.Total))

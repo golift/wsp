@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: codespell-project/actions-codespell@v1
+      - uses: codespell-project/actions-codespell@v2
         with:
           check_hidden: true
           skip: .git,go.sum,go.mod

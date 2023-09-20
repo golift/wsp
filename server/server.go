@@ -48,8 +48,8 @@ func (s *Server) StartDispatcher() {
 		case req := <-s.getPool:
 			s.threadCount[req.threadID]++
 			s.repPool <- s.pools[req.clientID]
-		case <-cleaner.C:
-			s.cleanPools()
+		case now := <-cleaner.C:
+			s.cleanPools(now)
 		case clientID := <-s.getStats:
 			s.repStats <- &Stats{
 				Pools:   s.poolStats(clientID),
@@ -67,17 +67,20 @@ func (s *Server) poolStats(cID clientID) map[clientID]any {
 			return map[clientID]any{"id not found": nil}
 		}
 
-		return map[clientID]any{cID: s.pools[cID].size()}
+		return map[clientID]any{cID: s.pools[cID].size(time.Now())}
 	}
+
+	now := time.Now()
 
 	pools := make(map[clientID]any, len(s.pools))
 	for target, pool := range s.pools {
 		pools[target] = map[string]any{ // becomes json.
 			"connected":    pool.connected,
+			"duration":     time.Since(pool.connected).Round(time.Second).String(),
 			"idlePoolWait": len(pool.idle),
 			"idlePoolSize": cap(pool.idle),
 			"client":       pool.handshake,
-			"sizes":        pool.size(),
+			"sizes":        pool.size(now),
 		}
 	}
 
@@ -97,7 +100,7 @@ func (s *Server) threadStats() map[uint]uint64 {
 // cleanPools removes empty Pools; those with no incoming client connections.
 // This also shoves pool counters into prometheus if it's enabled.
 // It is invoked every 5 sesconds and at shutdown.
-func (s *Server) cleanPools() {
+func (s *Server) cleanPools(now time.Time) {
 	if len(s.pools) == 0 {
 		return
 	}
@@ -116,7 +119,7 @@ func (s *Server) cleanPools() {
 		}
 
 		pools[target] = pool
-		ps := pool.Size()
+		ps := pool.Size(now)
 		totals.Total += ps.Total
 		totals.Idle += ps.Idle
 		totals.Busy += ps.Busy
@@ -137,7 +140,7 @@ func (s *Server) saveMetrics(totals *PoolSize, connsPerPool map[int]int) {
 	}
 
 	// we have to limit the label values to something...
-	const max = 20
+	const max = 11
 
 	for conns, pools := range connsPerPool {
 		if conns > max {

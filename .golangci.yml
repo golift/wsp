@@ -16,6 +16,8 @@ linters:
     - exhaustruct
     - exhaustive
     - nlreturn
+    - tagalign
+    - depguard
 
 run:
   timeout: 5m

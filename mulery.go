@@ -108,8 +108,8 @@ func (c *Config) Start() {
 	apache, _ := apachelog.New(c.ApacheLogFormat())
 
 	smx.Handle("/metrics", apache.Wrap(c.ValidateUpstream(promhttp.Handler()), c.httpLog.Writer()))
+	smx.Handle("/register", c.dispatch.HandleRegister()) // apache log can't do websockets.
 	smx.Handle("/stats", apache.Wrap(c.ValidateUpstream(http.HandlerFunc(c.dispatch.HandleStats)), c.httpLog.Writer()))
-	smx.Handle("/register", c.dispatch.HandleRegister())                                   // apache log can't do websockets.
 	smx.Handle("/request", apache.Wrap(http.HandlerFunc(c.HandleAll), c.httpLog.Writer())) // handleAll
 	smx.Handle("/request/", apache.Wrap(http.StripPrefix("/request",
 		c.ValidateUpstream(c.parsePath())), c.httpLog.Writer()))

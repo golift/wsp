@@ -3,7 +3,7 @@ module golift.io/mulery
 go 1.19
 
 require (
-	github.com/caddyserver/certmagic v0.19.2
+	github.com/caddyserver/certmagic v0.20.0
 	github.com/gorilla/websocket v1.5.1
 	github.com/lestrrat-go/apache-logformat/v2 v2.0.6
 	github.com/libdns/cloudflare v0.1.0

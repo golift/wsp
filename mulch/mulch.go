@@ -23,6 +23,10 @@ type Handshake struct {
 const HandshakeTimeout = 15 * time.Second
 
 // HashKeyID creates a unique client ID hash.
+// If a custom key validator returns a secret(string),
+// hash that with the client id to create a new client id.
+// This is custom logic you probably don't need, and you can
+// avoid it by returning an empty string from the custom key validator.
 func HashKeyID(secret string, clientID string) string {
 	if secret == "" {
 		return clientID

@@ -7,11 +7,11 @@ import "log"
 // Leaving the interface nil disables all log output.
 type Logger interface {
 	// Debugf is used sparingly.
-	Debugf(string, ...interface{})
+	Debugf(format string, v ...interface{})
 	// Errorf is the most used of the loggers.
-	Errorf(string, ...interface{})
+	Errorf(format string, v ...interface{})
 	// Printf is only used when a custom Handler is not provided.
-	Printf(string, ...interface{})
+	Printf(format string, v ...interface{})
 }
 
 // DefaultLogger is a simple wrapper around the provided Logger interface.

@@ -2,7 +2,11 @@
 // used by mulery client library, server library and server application.
 package mulch
 
-import "time"
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"time"
+)
 
 const SecretKeyHeader = "x-secret-key"
 
@@ -17,3 +21,15 @@ type Handshake struct {
 }
 
 const HandshakeTimeout = 15 * time.Second
+
+// HashKeyID creates a unique client ID hash.
+func HashKeyID(secret string, clientID string) string {
+	if secret == "" {
+		return clientID
+	}
+
+	hash := sha256.New()
+	hash.Write([]byte(secret + clientID))
+
+	return hex.EncodeToString(hash.Sum(nil))
+}

@@ -118,3 +118,8 @@ func (c *Client) Shutdown() {
 		pool.Shutdown()
 	}
 }
+
+// GetID returns the client ID hash.
+func (c *Client) GetID() string {
+	return mulch.HashKeyID(c.SecretKey, c.ID)
+}

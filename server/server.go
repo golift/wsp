@@ -1,9 +1,10 @@
 package server
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"time"
+
+	"golift.io/mulery/mulch"
 )
 
 var (
@@ -210,18 +211,8 @@ func (s *Server) dispatchRequest(request *dispatchRequest, threadID uint) {
 // Register the connection into server pools.
 // This is called through a channel from the register handler.
 func (s *Server) registerPool(client *PoolConfig) {
-	cID := client.ID
-
-	if client.secret != "" {
-		hash := sha256.New()
-		hash.Write([]byte(client.secret + client.ID))
-		// As promised, if a custom key validator returns a secret(string),
-		// hash that with the client id to create a new client id.
-		// This is custom logic you probably don't want, so don't return a string from your key validator.
-		cID = fmt.Sprintf("%x", hash.Sum(nil))
-	}
-
-	if pool, ok := s.pools[clientID(cID)]; !ok || pool == nil {
+	cID := mulch.HashKeyID(client.secret, client.ID)
+	if pool := s.pools[clientID(cID)]; pool == nil {
 		s.pools[clientID(cID)] = NewPool(s, client, cID+" ["+client.Name+"]")
 	}
 

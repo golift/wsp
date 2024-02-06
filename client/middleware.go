@@ -47,7 +47,7 @@ func (r *req2Handler) Write(data []byte) (int, error) {
 	}
 
 	if r.body == nil {
-		return 0, fmt.Errorf("tunnel write failed: %w", r.err)
+		return 0, fmt.Errorf("[%s] tunnel write failed: %w", r.conn.id, r.err)
 	}
 
 	size, err := r.body.Write(data)
@@ -55,7 +55,7 @@ func (r *req2Handler) Write(data []byte) (int, error) {
 
 	if err != nil {
 		r.err = err
-		return size, fmt.Errorf("tunnel write failed: %w", err)
+		return size, fmt.Errorf("[%s] tunnel write failed: %w", r.conn.id, err)
 	}
 
 	return size, nil

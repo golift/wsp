@@ -46,7 +46,7 @@ func NewConnection(pool *Pool) *Connection {
 		status:    CONNECTING,
 		setStatus: make(chan int),
 		getStatus: make(chan int),
-		id:        strconv.Itoa(rand.Intn(899) + 100), //nolint:gomnd
+		id:        strconv.Itoa(rand.Intn(899) + 100), //nolint:gomnd,gosec
 	}
 }
 

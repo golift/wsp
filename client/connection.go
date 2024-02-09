@@ -1,7 +1,6 @@
 package client
 
 import (
-	"compress/flate"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -66,8 +65,8 @@ func (c *Connection) Connect(ctx context.Context) error {
 		return fmt.Errorf("[%s] tcp dialer failure: %w", c.id, err)
 	}
 
-	c.ws.EnableWriteCompression(true)
-	_ = c.ws.SetCompressionLevel(flate.BestCompression)
+	// c.ws.EnableWriteCompression(true)
+	// _ = c.ws.SetCompressionLevel(flate.BestCompression)
 
 	// Send the greeting message with proxy id and desired pool size.
 	greeting := &mulch.Handshake{
@@ -75,7 +74,6 @@ func (c *Connection) Connect(ctx context.Context) error {
 		ID:        c.pool.client.Config.ID,
 		Size:      c.pool.client.Config.PoolIdleSize,
 		MaxSize:   c.pool.client.Config.PoolMaxSize,
-		Compress:  "",
 		ClientIDs: c.pool.client.ClientIDs,
 	}
 

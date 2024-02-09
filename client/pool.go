@@ -147,8 +147,6 @@ func (p *Pool) Remove(conn *Connection) {
 }
 
 func (p *Pool) remove(connection *Connection) {
-	// This trick uses the fact that a slice shares the same backing array and capacity as the original,
-	// so the storage is reused for the filtered slice. Of course, the original contents are modified.
 	var filtered []*Connection // == nil
 
 	for _, conn := range p.connections {

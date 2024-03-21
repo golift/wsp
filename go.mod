@@ -6,7 +6,7 @@ require (
 	github.com/caddyserver/certmagic v0.20.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/lestrrat-go/apache-logformat/v2 v2.0.6
-	github.com/libdns/cloudflare v0.1.0
+	github.com/libdns/cloudflare v0.1.1
 	github.com/prometheus/client_golang v1.19.0
 	golift.io/cnfgfile v0.0.0-20230531075023-f880041cc0a0
 	golift.io/rotatorr v0.0.0-20230911015553-cd2abbd726c7
@@ -19,7 +19,7 @@ require (
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.5 // indirect
 	github.com/lestrrat-go/strftime v1.0.6 // indirect
-	github.com/libdns/libdns v0.2.1 // indirect
+	github.com/libdns/libdns v0.2.2 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/matttproud/golang_protobuf_extensions/v2 v2.0.0 // indirect
 	github.com/mholt/acmez v1.2.0 // indirect

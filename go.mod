@@ -1,6 +1,6 @@
 module golift.io/mulery
 
-go 1.20
+go 1.21
 
 require (
 	github.com/caddyserver/certmagic v0.20.0

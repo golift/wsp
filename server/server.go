@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -8,10 +9,10 @@ import (
 )
 
 var (
-	ErrInvalidKey    = fmt.Errorf("invalid secret key provided")
-	ErrNoClientID    = fmt.Errorf("required client id header is missing")
-	ErrNoProxyTarget = fmt.Errorf("no proxy target found for request")
-	ErrInvalidData   = fmt.Errorf("invalid data received")
+	ErrInvalidKey    = errors.New("invalid secret key provided")
+	ErrNoClientID    = errors.New("required client id header is missing")
+	ErrNoProxyTarget = errors.New("no proxy target found for request")
+	ErrInvalidData   = errors.New("invalid data received")
 )
 
 // StartDispatcher dispatches connections from available pools to client requests.

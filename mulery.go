@@ -74,7 +74,7 @@ func (s StringSlice) Contains(str string) bool {
 	return false
 }
 
-var ErrInvalidKey = fmt.Errorf("provided key is not authorized")
+var ErrInvalidKey = errors.New("provided key is not authorized")
 
 const keyLen = 36
 

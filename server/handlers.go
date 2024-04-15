@@ -122,6 +122,7 @@ func (s *Server) HandleRegister() http.Handler {
 		if err := sock.ReadJSON(&greeting); err != nil {
 			s.ProxyError(resp, req, fmt.Errorf("unable to read greeting message: %w", err), "greetingFailed")
 			sock.Close()
+
 			return
 		}
 

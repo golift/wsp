@@ -126,6 +126,7 @@ func NewClient(config *Config) *Client {
 			EnableCompression: true,
 			HandshakeTimeout:  mulch.HandshakeTimeout,
 		},
+		pools: make(map[string]*Pool),
 	}
 }
 

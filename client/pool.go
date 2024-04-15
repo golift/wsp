@@ -174,7 +174,7 @@ func (p *Pool) remove(connection *Connection) {
 			filtered = append(filtered, conn)
 		} else {
 			p.disconnects++
-			conn.Close()
+			conn.Close() //nolint:wsl
 		}
 	}
 
@@ -207,8 +207,8 @@ func (p *Pool) size() *PoolSize {
 	poolSize.LastTry = p.lastTry
 	poolSize.Active = !p.shutdown
 
-	if poolSize.LastConn = p.client.lastConn; p.shutdown {
-		poolSize.LastConn = p.lastTry
+	if poolSize.LastConn = p.lastTry; !p.shutdown && p.client.RoundRobinConfig != nil {
+		poolSize.LastConn = p.client.lastConn
 	}
 
 	for _, connection := range p.connections {

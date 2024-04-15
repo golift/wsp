@@ -204,9 +204,12 @@ func (p *Pool) size() *PoolSize {
 	poolSize := new(PoolSize)
 	poolSize.Total = len(p.connections)
 	poolSize.Disconnects = p.disconnects
-	poolSize.LastConn = p.client.lastConn
 	poolSize.LastTry = p.lastTry
 	poolSize.Active = !p.shutdown
+
+	if poolSize.LastConn = p.client.lastConn; p.shutdown {
+		poolSize.LastConn = p.lastTry
+	}
 
 	for _, connection := range p.connections {
 		switch connection.Status() {

@@ -107,10 +107,7 @@ func (p *Pool) connector(ctx context.Context, now time.Time) {
 		p.backOff = p.client.BackoffReset // keep bringing it back down.
 	}
 
-	if p.client.RoundRobinConfig != nil && now.Sub(p.client.lastConn) > p.client.RetryInterval {
-		defer p.client.restart(ctx)
-		return //nolint:wsl
-	} else if now.Sub(p.lastTry) < p.backOff {
+	if now.Sub(p.lastTry) < p.backOff {
 		return
 	}
 
@@ -133,6 +130,17 @@ func (p *Pool) connector(ctx context.Context, now time.Time) {
 }
 
 func (p *Pool) fillConnectionPool(ctx context.Context, now time.Time, toCreate int) {
+	if p.client.RoundRobinConfig != nil {
+		if toCreate == 0 {
+			// Keep this up to date, or the logic will skip to the next server prematurely.
+			p.client.lastConn = now
+		} else if now.Sub(p.client.lastConn) > p.client.RetryInterval {
+			// We need more connections and the last successful connection was too long ago.
+			// Restart and skip to the next server in the round robin target list.
+			defer p.client.restart(ctx)
+		}
+	}
+
 	// Try to reach ideal pool size.
 	for ; toCreate > 0; toCreate-- {
 		// This is the only place a connection is added to the pool.
@@ -146,12 +154,6 @@ func (p *Pool) fillConnectionPool(ctx context.Context, now time.Time, toCreate i
 
 		p.connections = append(p.connections, conn)
 		p.backOff = p.client.Backoff
-
-		if p.client.RoundRobinConfig != nil {
-			// We only use this variable if round robin is true.
-			// Updating it otherwise is not thread safe because we may have > 1 pool.
-			p.client.lastConn = now
-		}
 	}
 }
 
@@ -180,8 +182,10 @@ func (p *Pool) remove(connection *Connection) {
 
 // Shutdown and close all connections in the pool.
 func (p *Pool) Shutdown() {
-	p.shutdown = true
-	close(p.done)
+	if !p.shutdown {
+		p.shutdown = true
+		close(p.done)
+	}
 }
 
 func (ps *PoolSize) String() string {

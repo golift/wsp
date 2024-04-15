@@ -12,6 +12,7 @@ type Pool struct {
 	target      string
 	secretKey   string
 	connections []*Connection
+	disconnects int
 	done        chan struct{}
 	getSize     chan struct{}
 	repSize     chan *PoolSize
@@ -24,10 +25,12 @@ type Pool struct {
 
 // PoolSize represent the number of open connections per status.
 type PoolSize struct {
-	Connecting int
-	Idle       int
-	Running    int
-	Total      int
+	Disconnects int
+	Connecting  int
+	Idle        int
+	Running     int
+	Total       int
+	LastConn    time.Time
 }
 
 // StartPool creates and starts a pool in one command.
@@ -103,7 +106,7 @@ func (p *Pool) connector(ctx context.Context, now time.Time) {
 		p.backOff = p.client.BackoffReset // keep bringing it back down.
 	}
 
-	if p.client.RoundRobin && now.Sub(p.client.lastConn) > p.client.RetryInterval {
+	if p.client.RoundRobinConfig != nil && now.Sub(p.client.lastConn) > p.client.RetryInterval {
 		defer p.client.restart(ctx)
 		p.client.Printf("Restarting tunnel to connect to next websocket target.")
 		return //nolint:wsl
@@ -144,7 +147,7 @@ func (p *Pool) fillConnectionPool(ctx context.Context, now time.Time, toCreate i
 		p.connections = append(p.connections, conn)
 		p.backOff = p.client.Backoff
 
-		if p.client.RoundRobin {
+		if p.client.RoundRobinConfig != nil {
 			// We only use this variable if round robin is true.
 			// Updating it otherwise is not thread safe because we may have > 1 pool.
 			p.client.lastConn = now
@@ -167,6 +170,7 @@ func (p *Pool) remove(connection *Connection) {
 		if connection != conn {
 			filtered = append(filtered, conn)
 		} else {
+			p.disconnects++
 			conn.Close()
 		}
 	}
@@ -194,6 +198,8 @@ func (p *Pool) Size() *PoolSize {
 func (p *Pool) size() *PoolSize {
 	poolSize := new(PoolSize)
 	poolSize.Total = len(p.connections)
+	poolSize.Disconnects = p.disconnects
+	poolSize.LastConn = p.lastTry
 
 	for _, connection := range p.connections {
 		switch connection.Status() {

@@ -46,18 +46,26 @@ type Config struct {
 	// What to reset the backoff to when max is hit.
 	// Set this to max to stay at max.
 	BackoffReset time.Duration
+	// If RRConfig is non-nil then the servers provided in Targets are
+	// tried sequentially after they cannot be reached in RetryInterval.
+	*RoundRobinConfig
 	// If this is true, then the servers provided in Targets are tried
 	// sequentially after they cannot be reached in RetryInterval.
-	RoundRobin bool
-	// When RoundRobin is true, this configures how long a server is
-	// retried unsuccessfully before trying the next server in Targets list.
-	RetryInterval time.Duration
 	// Handler is an optional custom handler for all proxied requests.
 	// Leaving this nil makes all requests use an empty http.Client.
 	Handler func(http.ResponseWriter, *http.Request)
 	// Logger allows routing logs from this package however you'd like.
 	// If left nil, you will get no logs. Use DefaultLogger to print logs to stdout.
 	mulch.Logger
+}
+
+// RoundRobinConfig is the configuration specific to round robin target acquisition.
+type RoundRobinConfig struct {
+	// When RoundRobin is true, this configures how long a server is
+	// retried unsuccessfully before trying the next server in Targets list.
+	RetryInterval time.Duration
+	// Callback is called when the tunnel changes.
+	Callback func(ctx context.Context, socket string)
 }
 
 // Client connects to one or more Server using HTTP websockets.
@@ -102,11 +110,11 @@ func NewClient(config *Config) *Client {
 		config.BackoffReset = DefaultBackoffReset
 	}
 
-	if config.RoundRobin {
+	if config.RoundRobinConfig != nil {
 		if len(config.Targets) <= 1 {
-			config.RoundRobin = false
-		} else if config.RetryInterval == 0 {
-			config.RetryInterval = time.Minute
+			config.RoundRobinConfig = nil
+		} else if config.RoundRobinConfig.RetryInterval == 0 {
+			config.RoundRobinConfig.RetryInterval = time.Minute
 		}
 	}
 
@@ -118,32 +126,54 @@ func NewClient(config *Config) *Client {
 			EnableCompression: true,
 			HandshakeTimeout:  mulch.HandshakeTimeout,
 		},
-		pools: make(map[string]*Pool),
 	}
 }
 
 // Start the Proxy.
 func (c *Client) Start(ctx context.Context) {
-	if !c.Config.RoundRobin {
-		for _, target := range c.Config.Targets {
-			c.pools[target] = StartPool(ctx, c, target, c.Config.SecretKey)
+	if c.Config.RoundRobinConfig != nil {
+		c.startOnePool(ctx)
+	} else {
+		c.startAllPools(ctx)
+	}
+}
+
+func (c *Client) startAllPools(ctx context.Context) {
+	for _, target := range c.Config.Targets {
+		if c.pools[target] != nil && !c.pools[target].shutdown {
+			panic("Attempt to overwrite active mulery client pool!")
 		}
 
-		return
+		c.pools[target] = StartPool(ctx, c, target, c.Config.SecretKey)
 	}
+}
 
+// startOnePool happens in round robin mode.
+func (c *Client) startOnePool(ctx context.Context) {
 	c.target++
 	if c.target >= len(c.Config.Targets) {
 		c.target = 0
 	}
 
 	target := c.Config.Targets[c.target]
+
+	if c.pools[target] != nil && !c.pools[target].shutdown {
+		panic("Attempt to overwrite active mulery client pool!")
+	}
+
+	if c.Callback != nil {
+		c.Callback(ctx, target)
+	}
+
 	c.pools[target] = StartPool(ctx, c, target, c.Config.SecretKey)
 }
 
 // restart calls shutdown and start inside a go routine.
 // Allows a failing pool to restart the client.
+// This is only useful in RoundRobin mode, do not call it otherwise.
 func (c *Client) restart(ctx context.Context) {
+	c.Printf("Restarting tunnel to connect to next websocket target.")
+
 	go func() {
 		c.Shutdown()
 		c.Start(ctx)
@@ -160,4 +190,15 @@ func (c *Client) Shutdown() {
 // GetID returns the client ID hash.
 func (c *Client) GetID() string {
 	return mulch.HashKeyID(c.SecretKey, c.ID)
+}
+
+// PoolStats returns stats for all pools.
+func (c *Client) PoolStats() map[string]*PoolSize {
+	sizes := map[string]*PoolSize{}
+
+	for socket, pool := range c.pools {
+		sizes[socket] = pool.size()
+	}
+
+	return sizes
 }

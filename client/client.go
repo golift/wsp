@@ -157,6 +157,7 @@ func (c *Client) startOnePool(ctx context.Context) {
 	}
 
 	target := c.Config.Targets[c.target]
+	c.lastConn = time.Now()
 
 	if c.pools[target] != nil && !c.pools[target].shutdown {
 		panic("Attempt to overwrite active mulery client pool!")

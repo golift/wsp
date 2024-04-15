@@ -31,6 +31,7 @@ type PoolSize struct {
 	Running     int
 	Total       int
 	LastConn    time.Time
+	LastTry     time.Time
 	Active      bool
 }
 
@@ -203,7 +204,8 @@ func (p *Pool) size() *PoolSize {
 	poolSize := new(PoolSize)
 	poolSize.Total = len(p.connections)
 	poolSize.Disconnects = p.disconnects
-	poolSize.LastConn = p.lastTry
+	poolSize.LastConn = p.client.lastConn
+	poolSize.LastTry = p.lastTry
 	poolSize.Active = !p.shutdown
 
 	for _, connection := range p.connections {

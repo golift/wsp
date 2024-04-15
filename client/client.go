@@ -46,6 +46,12 @@ type Config struct {
 	// What to reset the backoff to when max is hit.
 	// Set this to max to stay at max.
 	BackoffReset time.Duration
+	// If this is true, then the servers provided in Targets are tried
+	// sequentially after they cannot be reached in RetryInterval.
+	RoundRobin bool
+	// When RoundRobin is true, this configures how long a server is
+	// retried unsuccessfully before trying the next server in Targets list.
+	RetryInterval time.Duration
 	// Handler is an optional custom handler for all proxied requests.
 	// Leaving this nil makes all requests use an empty http.Client.
 	Handler func(http.ResponseWriter, *http.Request)
@@ -58,9 +64,11 @@ type Config struct {
 // The Server can then send HTTP requests to execute.
 type Client struct {
 	*Config
-	client *http.Client
-	dialer *websocket.Dialer
-	pools  map[string]*Pool
+	lastConn time.Time // keeps track of last successful connection to our active target.
+	target   int       // keeps track of active target in round robin mode.
+	client   *http.Client
+	dialer   *websocket.Dialer
+	pools    map[string]*Pool
 }
 
 // NewConfig creates a new ProxyConfig.
@@ -94,7 +102,16 @@ func NewClient(config *Config) *Client {
 		config.BackoffReset = DefaultBackoffReset
 	}
 
+	if config.RoundRobin {
+		if len(config.Targets) <= 1 {
+			config.RoundRobin = false
+		} else if config.RetryInterval == 0 {
+			config.RetryInterval = time.Minute
+		}
+	}
+
 	return &Client{
+		target: -1,
 		Config: config,
 		client: &http.Client{},
 		dialer: &websocket.Dialer{
@@ -107,9 +124,30 @@ func NewClient(config *Config) *Client {
 
 // Start the Proxy.
 func (c *Client) Start(ctx context.Context) {
-	for _, target := range c.Config.Targets {
-		c.pools[target] = StartPool(ctx, c, target, c.Config.SecretKey)
+	if !c.Config.RoundRobin {
+		for _, target := range c.Config.Targets {
+			c.pools[target] = StartPool(ctx, c, target, c.Config.SecretKey)
+		}
+
+		return
 	}
+
+	c.target++
+	if c.target >= len(c.Config.Targets) {
+		c.target = 0
+	}
+
+	target := c.Config.Targets[c.target]
+	c.pools[target] = StartPool(ctx, c, target, c.Config.SecretKey)
+}
+
+// restart calls shutdown and start inside a go routine.
+// Allows a failing pool to restart the client.
+func (c *Client) restart(ctx context.Context) {
+	go func() {
+		c.Shutdown()
+		c.Start(ctx)
+	}()
 }
 
 // Shutdown the Proxy.

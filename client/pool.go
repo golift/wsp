@@ -31,6 +31,7 @@ type PoolSize struct {
 	Running     int
 	Total       int
 	LastConn    time.Time
+	Active      bool
 }
 
 // StartPool creates and starts a pool in one command.
@@ -108,7 +109,6 @@ func (p *Pool) connector(ctx context.Context, now time.Time) {
 
 	if p.client.RoundRobinConfig != nil && now.Sub(p.client.lastConn) > p.client.RetryInterval {
 		defer p.client.restart(ctx)
-		p.client.Printf("Restarting tunnel to connect to next websocket target.")
 		return //nolint:wsl
 	} else if now.Sub(p.lastTry) < p.backOff {
 		return
@@ -200,6 +200,7 @@ func (p *Pool) size() *PoolSize {
 	poolSize.Total = len(p.connections)
 	poolSize.Disconnects = p.disconnects
 	poolSize.LastConn = p.lastTry
+	poolSize.Active = !p.shutdown
 
 	for _, connection := range p.connections {
 		switch connection.Status() {

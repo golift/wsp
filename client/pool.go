@@ -12,6 +12,7 @@ type Pool struct {
 	target      string
 	secretKey   string
 	connections []*Connection
+	disconnects int
 	done        chan struct{}
 	getSize     chan struct{}
 	repSize     chan *PoolSize
@@ -24,10 +25,14 @@ type Pool struct {
 
 // PoolSize represent the number of open connections per status.
 type PoolSize struct {
-	Connecting int
-	Idle       int
-	Running    int
-	Total      int
+	Disconnects int
+	Connecting  int
+	Idle        int
+	Running     int
+	Total       int
+	LastConn    time.Time
+	LastTry     time.Time
+	Active      bool
 }
 
 // StartPool creates and starts a pool in one command.
@@ -122,6 +127,21 @@ func (p *Pool) connector(ctx context.Context, now time.Time) {
 		toCreate = p.client.Config.PoolMaxSize - poolSize.Total
 	}
 
+	p.fillConnectionPool(ctx, now, toCreate)
+}
+
+func (p *Pool) fillConnectionPool(ctx context.Context, now time.Time, toCreate int) {
+	if p.client.RoundRobinConfig != nil {
+		if toCreate == 0 {
+			// Keep this up to date, or the logic will skip to the next server prematurely.
+			p.client.lastConn = now
+		} else if now.Sub(p.client.lastConn) > p.client.RetryInterval {
+			// We need more connections and the last successful connection was too long ago.
+			// Restart and skip to the next server in the round robin target list.
+			defer p.client.restart(ctx)
+		}
+	}
+
 	// Try to reach ideal pool size.
 	for ; toCreate > 0; toCreate-- {
 		// This is the only place a connection is added to the pool.
@@ -153,7 +173,8 @@ func (p *Pool) remove(connection *Connection) {
 		if connection != conn {
 			filtered = append(filtered, conn)
 		} else {
-			conn.Close()
+			p.disconnects++
+			conn.Close() //nolint:wsl
 		}
 	}
 
@@ -162,8 +183,10 @@ func (p *Pool) remove(connection *Connection) {
 
 // Shutdown and close all connections in the pool.
 func (p *Pool) Shutdown() {
-	p.shutdown = true
-	close(p.done)
+	if !p.shutdown {
+		p.shutdown = true
+		close(p.done)
+	}
 }
 
 func (ps *PoolSize) String() string {
@@ -180,6 +203,13 @@ func (p *Pool) Size() *PoolSize {
 func (p *Pool) size() *PoolSize {
 	poolSize := new(PoolSize)
 	poolSize.Total = len(p.connections)
+	poolSize.Disconnects = p.disconnects
+	poolSize.LastTry = p.lastTry
+	poolSize.Active = !p.shutdown
+
+	if poolSize.LastConn = p.lastTry; !p.shutdown && p.client.RoundRobinConfig != nil {
+		poolSize.LastConn = p.client.lastConn
+	}
 
 	for _, connection := range p.connections {
 		switch connection.Status() {

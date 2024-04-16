@@ -46,6 +46,11 @@ type Config struct {
 	// What to reset the backoff to when max is hit.
 	// Set this to max to stay at max.
 	BackoffReset time.Duration
+	// If RRConfig is non-nil then the servers provided in Targets are
+	// tried sequentially after they cannot be reached in RetryInterval.
+	*RoundRobinConfig
+	// If this is true, then the servers provided in Targets are tried
+	// sequentially after they cannot be reached in RetryInterval.
 	// Handler is an optional custom handler for all proxied requests.
 	// Leaving this nil makes all requests use an empty http.Client.
 	Handler func(http.ResponseWriter, *http.Request)
@@ -54,13 +59,24 @@ type Config struct {
 	mulch.Logger
 }
 
+// RoundRobinConfig is the configuration specific to round robin target acquisition.
+type RoundRobinConfig struct {
+	// When RoundRobin is true, this configures how long a server is
+	// retried unsuccessfully before trying the next server in Targets list.
+	RetryInterval time.Duration
+	// Callback is called when the tunnel changes.
+	Callback func(ctx context.Context, socket string)
+}
+
 // Client connects to one or more Server using HTTP websockets.
 // The Server can then send HTTP requests to execute.
 type Client struct {
 	*Config
-	client *http.Client
-	dialer *websocket.Dialer
-	pools  map[string]*Pool
+	lastConn time.Time // keeps track of last successful connection to our active target.
+	target   int       // keeps track of active target in round robin mode.
+	client   *http.Client
+	dialer   *websocket.Dialer
+	pools    map[string]*Pool
 }
 
 // NewConfig creates a new ProxyConfig.
@@ -94,7 +110,16 @@ func NewClient(config *Config) *Client {
 		config.BackoffReset = DefaultBackoffReset
 	}
 
+	if config.RoundRobinConfig != nil {
+		if len(config.Targets) <= 1 {
+			config.RoundRobinConfig = nil
+		} else if config.RoundRobinConfig.RetryInterval == 0 {
+			config.RoundRobinConfig.RetryInterval = time.Minute
+		}
+	}
+
 	return &Client{
+		target: -1,
 		Config: config,
 		client: &http.Client{},
 		dialer: &websocket.Dialer{
@@ -107,9 +132,54 @@ func NewClient(config *Config) *Client {
 
 // Start the Proxy.
 func (c *Client) Start(ctx context.Context) {
+	if c.Config.RoundRobinConfig != nil {
+		c.startOnePool(ctx)
+	} else {
+		c.startAllPools(ctx)
+	}
+}
+
+func (c *Client) startAllPools(ctx context.Context) {
 	for _, target := range c.Config.Targets {
+		if c.pools[target] != nil && !c.pools[target].shutdown {
+			panic("Attempt to overwrite active mulery client pool!")
+		}
+
 		c.pools[target] = StartPool(ctx, c, target, c.Config.SecretKey)
 	}
+}
+
+// startOnePool happens in round robin mode.
+func (c *Client) startOnePool(ctx context.Context) {
+	c.target++
+	if c.target >= len(c.Config.Targets) {
+		c.target = 0
+	}
+
+	target := c.Config.Targets[c.target]
+	c.lastConn = time.Now()
+
+	if c.pools[target] != nil && !c.pools[target].shutdown {
+		panic("Attempt to overwrite active mulery client pool!")
+	}
+
+	if c.Callback != nil {
+		c.Callback(ctx, target)
+	}
+
+	c.pools[target] = StartPool(ctx, c, target, c.Config.SecretKey)
+}
+
+// restart calls shutdown and start inside a go routine.
+// Allows a failing pool to restart the client.
+// This is only useful in RoundRobin mode, do not call it otherwise.
+func (c *Client) restart(ctx context.Context) {
+	c.Printf("Restarting tunnel to connect to next websocket target.")
+
+	go func() {
+		c.Shutdown()
+		c.Start(ctx)
+	}()
 }
 
 // Shutdown the Proxy.
@@ -122,4 +192,15 @@ func (c *Client) Shutdown() {
 // GetID returns the client ID hash.
 func (c *Client) GetID() string {
 	return mulch.HashKeyID(c.SecretKey, c.ID)
+}
+
+// PoolStats returns stats for all pools.
+func (c *Client) PoolStats() map[string]*PoolSize {
+	sizes := map[string]*PoolSize{}
+
+	for socket, pool := range c.pools {
+		sizes[socket] = pool.size()
+	}
+
+	return sizes
 }

@@ -211,6 +211,10 @@ func (p *Pool) size() *PoolSize {
 		poolSize.LastConn = p.client.lastConn
 	}
 
+	if p.shutdown {
+		return poolSize
+	}
+
 	for _, connection := range p.connections {
 		switch connection.Status() {
 		case CONNECTING:

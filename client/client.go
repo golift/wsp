@@ -199,7 +199,7 @@ func (c *Client) PoolStats() map[string]*PoolSize {
 	sizes := map[string]*PoolSize{}
 
 	for socket, pool := range c.pools {
-		sizes[socket] = pool.size()
+		sizes[socket] = pool.Size()
 	}
 
 	return sizes

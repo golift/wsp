@@ -199,7 +199,12 @@ func (c *Client) PoolStats() map[string]*PoolSize {
 	sizes := map[string]*PoolSize{}
 
 	for socket, pool := range c.pools {
-		sizes[socket] = pool.Size()
+		if pool.shutdown {
+			// Use internal method on dead pools.
+			sizes[socket] = pool.size()
+		} else {
+			sizes[socket] = pool.Size()
+		}
 	}
 
 	return sizes

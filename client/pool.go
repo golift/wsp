@@ -132,7 +132,7 @@ func (p *Pool) connector(ctx context.Context, now time.Time) {
 
 func (p *Pool) fillConnectionPool(ctx context.Context, now time.Time, toCreate int) {
 	if p.client.RoundRobinConfig != nil {
-		if toCreate == 0 {
+		if toCreate == 0 || len(p.connections) > 0 {
 			// Keep this up to date, or the logic will skip to the next server prematurely.
 			p.client.lastConn = now
 		} else if now.Sub(p.client.lastConn) > p.client.RetryInterval {
@@ -209,6 +209,10 @@ func (p *Pool) size() *PoolSize {
 
 	if poolSize.LastConn = p.lastTry; !p.shutdown && p.client.RoundRobinConfig != nil {
 		poolSize.LastConn = p.client.lastConn
+	}
+
+	if p.shutdown {
+		return poolSize
 	}
 
 	for _, connection := range p.connections {

@@ -132,10 +132,10 @@ func (p *Pool) connector(ctx context.Context, now time.Time) {
 
 func (p *Pool) fillConnectionPool(ctx context.Context, now time.Time, toCreate int) {
 	if p.client.RoundRobinConfig != nil {
-		if toCreate == 0 {
+		if toCreate == 0 || len(p.connections) > 0 {
 			// Keep this up to date, or the logic will skip to the next server prematurely.
 			p.client.lastConn = now
-		} else if len(p.connections) == 0 && now.Sub(p.client.lastConn) > p.client.RetryInterval {
+		} else if now.Sub(p.client.lastConn) > p.client.RetryInterval {
 			// We need more connections and the last successful connection was too long ago.
 			// Restart and skip to the next server in the round robin target list.
 			defer p.client.restart(ctx)
